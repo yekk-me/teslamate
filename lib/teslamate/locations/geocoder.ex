@@ -22,7 +22,10 @@ defmodule TeslaMate.Locations.Geocoder do
 
   def reverse_lookup(lat, lon, lang \\ "en") do
     if System.get_env("BD_MAP_AK") do
-      baidu_reverse_lookup(lat, lon, lang)
+      with {:ok, address_raw} <- baidu_reverse_lookup(lat, lon, lang),
+          {:ok, address} <- into_address_baidu(address_raw) do
+        {:ok, address}
+      end
     else
       opts = [
         format: :jsonv2,
@@ -43,9 +46,9 @@ defmodule TeslaMate.Locations.Geocoder do
 
   def baidu_reverse_lookup(lat, lon, lang) do
     ak = System.get_env("BD_MAP_AK")
+    sk = System.get_env("BD_MAP_SK")
 
-    url = "https://api.map.baidu.com/reverse_geocoding/v3/"
-    opts = [
+    base_params = [
       ak: ak,
       extensions_poi: 1,
       entire_poi: 1,
@@ -55,14 +58,27 @@ defmodule TeslaMate.Locations.Geocoder do
       location: "#{lat},#{lon}"
     ]
 
-    with {:ok, address_raw} <- baidu_query(url, lang, opts),
-         {:ok, address} <- into_address_baidu(address_raw) do
-      {:ok, address}
-    end
-  end
+    {sorted_params, query_str} =
+      base_params
+      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      |> Enum.map(fn {k, v} -> {to_string(k), to_string(v)} end)
+      |> then(fn sorted ->
+        query_str = Enum.map_join(sorted, "&", fn {k, v} -> "#{k}=#{v}" end)
+        {sorted, query_str}
+      end)
 
-  def baidu_query(url, lang, params) do
-    case get(url, query: params, headers: [{"Accept-Language", lang}]) do
+    uri_path = "/reverse_geocoding/v3"
+    raw_str = "#{uri_path}?#{query_str}#{sk}"
+    encoded_str = URI.encode_www_form(String.replace(raw_str, ",", "%2C"))
+    sn = :crypto.hash(:md5, encoded_str) |> Base.encode16(case: :lower)
+
+    final_params =
+      sorted_params
+      |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
+      |> Keyword.put(:sn, sn)
+
+    url = "https://api.map.baidu.com/reverse_geocoding/v3"
+    case get(url, query: final_params, headers: [{"Accept-Language", lang}]) do
       {:ok, %Tesla.Env{status: 200, body: body}} -> {:ok, body}
       {:ok, %Tesla.Env{body: %{"error" => reason}}} -> {:error, reason}
       {:ok, %Tesla.Env{} = env} -> {:error, reason: "Unexpected response", env: env}
