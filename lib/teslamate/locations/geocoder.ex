@@ -21,7 +21,11 @@ defmodule TeslaMate.Locations.Geocoder do
   end
 
   def reverse_lookup(lat, lon, lang \\ "en") do
-    if System.get_env("BD_MAP_AK") do
+    bd_map_ak = System.get_env("BD_MAP_AK")
+    trimmed_ak = if bd_map_ak, do: String.trim(bd_map_ak), else: ""
+    bd_map_sk = System.get_env("BD_MAP_SK")
+    trimmed_sk = if bd_map_sk, do: String.trim(bd_map_sk), else: ""
+    if trimmed_ak != "" && trimmed_sk != "" do
       with {:ok, address_raw} <- baidu_reverse_lookup(lat, lon, lang),
           {:ok, address} <- into_address_baidu(address_raw) do
         {:ok, address}
