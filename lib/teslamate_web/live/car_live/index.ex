@@ -17,7 +17,6 @@ defmodule TeslaMateWeb.CarLive.Index do
       |> assign_new(:settings, fn ->
         settings
         |> update_base_url(socket)
-        |> update_grafana_url(socket)
       end)
 
     {:ok, socket}
@@ -47,31 +46,4 @@ defmodule TeslaMateWeb.CarLive.Index do
     settings
   end
 
-  defp update_grafana_url(%GlobalSettings{base_url: url} = settings, socket)
-       when is_nil(url) or url == "" do
-    settings
-  end
-
-  defp update_grafana_url(%GlobalSettings{base_url: url} = settings, socket) do
-    if connected?(socket) do
-      grafana_url = replace_port(url, 3000)
-
-      case Settings.update_global_settings(settings, %{grafana_url: grafana_url}) do
-        {:error, reason} ->
-          Logger.warning("Updating grafana_url failed: #{inspect(reason)}")
-          settings
-
-        {:ok, settings} ->
-          settings
-      end
-    else
-      settings
-    end
-  end
-
-  defp replace_port(url, new_port) do
-    uri = URI.parse(url)
-    uri = %URI{uri | port: new_port}
-    URI.to_string(uri)
-  end
 end
