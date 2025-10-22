@@ -359,10 +359,10 @@ defmodule TeslaMate.Locations.Geocoder do
     country = get_component.(["country"])
     postcode = get_component.(["postal_code"])
     
-    # 获取地点名称（如果有的话）
-    name = case first_result do
-      %{"name" => place_name} -> place_name
-      _ -> nil
+    # 获取地点名称 - 从 address_components 第一个元素的 long_name 获取
+    name = case components do
+      [first_component | _] -> first_component["long_name"]
+      [] -> nil
     end
     
     %{
