@@ -21,30 +21,75 @@ defmodule TeslaMate.Locations.Geocoder do
   end
 
   def reverse_lookup(lat, lon, lang \\ "en") do
+    # Check for Google Maps API key first
+    google_api_key = System.get_env("GOOGLE_MAPS_API_KEY")
+    trimmed_google_key = if google_api_key, do: String.trim(google_api_key), else: ""
+    
+    # Check for Baidu Maps API keys
     bd_map_ak = System.get_env("BD_MAP_AK")
     trimmed_ak = if bd_map_ak, do: String.trim(bd_map_ak), else: ""
     bd_map_sk = System.get_env("BD_MAP_SK")
     trimmed_sk = if bd_map_sk, do: String.trim(bd_map_sk), else: ""
-    if trimmed_ak != "" && trimmed_sk != "" do
-      with {:ok, address_raw} <- baidu_reverse_lookup(lat, lon, lang),
-          {:ok, address} <- into_address_baidu(address_raw) do
-        {:ok, address}
-      end
-    else
-      opts = [
-        format: :jsonv2,
-        addressdetails: 1,
-        extratags: 1,
-        namedetails: 1,
-        zoom: 19,
-        lat: lat,
-        lon: lon
-      ]
+    
+    cond do
+      # Prefer Google Maps if API key is available
+      trimmed_google_key != "" ->
+        with {:ok, address_raw} <- google_reverse_lookup(lat, lon, lang),
+             {:ok, address} <- into_address_google(address_raw) do
+          {:ok, address}
+        end
+        
+      # Fall back to Baidu Maps if API keys are available
+      trimmed_ak != "" && trimmed_sk != "" ->
+        with {:ok, address_raw} <- baidu_reverse_lookup(lat, lon, lang),
+            {:ok, address} <- into_address_baidu(address_raw) do
+          {:ok, address}
+        end
+        
+      # Default to OSM
+      true ->
+        opts = [
+          format: :jsonv2,
+          addressdetails: 1,
+          extratags: 1,
+          namedetails: 1,
+          zoom: 19,
+          lat: lat,
+          lon: lon
+        ]
 
-      with {:ok, address_raw} <- query("/reverse", lang, opts),
-           {:ok, address} <- into_address(address_raw) do
-        {:ok, address}
-      end
+        with {:ok, address_raw} <- query("/reverse", lang, opts),
+             {:ok, address} <- into_address(address_raw) do
+          {:ok, address}
+        end
+    end
+  end
+
+  def google_reverse_lookup(lat, lon, lang) do
+    api_key = System.get_env("GOOGLE_MAPS_API_KEY")
+    
+    params = [
+      latlng: "#{lat},#{lon}",
+      key: api_key,
+      language: lang
+    ]
+    
+    headers = [
+      {"Content-Type", "application/json"},
+      {"X-Goog-Api-Key", api_key}
+    ]
+    
+    url = "https://maps.googleapis.com/maps/api/geocode/json"
+    
+    case get(url, query: params, headers: headers) do
+      {:ok, %Tesla.Env{status: 200, body: %{"status" => "OK"} = body}} -> 
+        {:ok, body}
+      {:ok, %Tesla.Env{status: 200, body: %{"status" => status}}} -> 
+        {:error, {:google_api_error, status}}
+      {:ok, %Tesla.Env{} = env} -> 
+        {:error, reason: "Unexpected response", env: env}
+      {:error, reason} -> 
+        {:error, reason}
     end
   end
 
@@ -284,6 +329,70 @@ defmodule TeslaMate.Locations.Geocoder do
   end
 
   defp into_address_baidu(_unexpected), do: {:error, :invalid_response_format}
+
+  defp into_address_google(%{"results" => []}) do
+    {:error, :no_results}
+  end
+
+  defp into_address_google(%{"results" => [first_result | _]}) do
+    lat = get_in(first_result, ["geometry", "location", "lat"]) || 0.0
+    lon = get_in(first_result, ["geometry", "location", "lng"]) || 0.0
+    
+    # 从地址组件中提取各个部分
+    components = first_result["address_components"] || []
+    
+    # 辅助函数：根据类型获取地址组件
+    get_component = fn types_to_find ->
+      Enum.find_value(components, fn component ->
+        types = component["types"] || []
+        if Enum.any?(types_to_find, &(&1 in types)) do
+          component["long_name"]
+        end
+      end)
+    end
+    
+    # 获取各个地址组件
+    house_number = get_component.(["street_number"])
+    road = get_component.(["route"])
+    neighbourhood = get_component.(["neighborhood", "sublocality", "sublocality_level_1", "sublocality_level_2", "sublocality_level_3", "sublocality_level_4"])
+    city = get_component.(["locality", "administrative_area_level_2"])
+    county = get_component.(["administrative_area_level_2", "administrative_area_level_3"])
+    state = get_component.(["administrative_area_level_1"])
+    country = get_component.(["country"])
+    postcode = get_component.(["postal_code"])
+    
+    # 获取地点名称（如果有的话）
+    name = case first_result do
+      %{"name" => place_name} -> place_name
+      _ -> nil
+    end
+    
+    %{
+      display_name: first_result["formatted_address"] || "Unknown",
+      osm_id: hash_coordinate(lat, lon),
+      osm_type: "node",
+      latitude: lat,
+      longitude: lon,
+      name: name,
+      house_number: house_number,
+      road: road,
+      neighbourhood: neighbourhood,
+      city: city,
+      county: county,
+      postcode: postcode,
+      state: state,
+      state_district: nil,
+      country: country,
+      raw: first_result
+    }
+    |> then(&{:ok, &1})
+  end
+
+  defp into_address_google(%{"status" => status}) do
+    {:error, {:google_api_error, status}}
+  end
+
+  defp into_address_google(_unexpected), do: {:error, :invalid_response_format}
 
   defp log_level(%Tesla.Env{} = env) when env.status >= 400, do: :warning
   defp log_level(%Tesla.Env{}), do: :info
