@@ -361,16 +361,32 @@ defmodule TeslaMate.Locations.Geocoder do
     country = get_component.(["country"])
     postcode = get_component.(["postal_code"])
     
-    # 获取地点名称 - 从包含 sublocality 类型的组件中倒序拼接
+    # 获取地点名称 - 取最后一个 sublocality 然后从 formatted_address 中取后边的部分
     name = components
     |> Enum.filter(fn component ->
       types = component["types"] || []
       "sublocality" in types
     end)
-    |> Enum.map(fn component -> component["long_name"] end)
-    |> Enum.reverse()
-    |> Enum.join("")
-    |> then(fn result -> if result == "", do: nil, else: result end)
+    |> then(fn sublocality_components ->
+      if sublocality_components != [] do
+        # 找到最后一个 sublocality
+        last_sublocality = List.last(sublocality_components)
+        sublocality_name = last_sublocality["long_name"]
+        formatted_address = first_result["formatted_address"] || ""
+        
+        # 在 formatted_address 中查找最后一个 sublocality 的位置
+        case String.split(formatted_address, sublocality_name) do
+          [prefix, suffix] ->
+            # 找到 sublocality，取从该 sublocality 开始的所有内容
+            sublocality_name <> String.trim(suffix)
+          _ ->
+            # 没找到，返回 nil
+            nil
+        end
+      else
+        nil
+      end
+    end)
     
     %{
       display_name: first_result["formatted_address"] || "Unknown",
