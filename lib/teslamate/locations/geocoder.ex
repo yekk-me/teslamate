@@ -335,7 +335,7 @@ defmodule TeslaMate.Locations.Geocoder do
     {:error, :no_results}
   end
 
-  defp into_address_google(%{"results" => [first_result | _]}) do
+  defp into_address_google(%{"results" => [first_result | _]} = response) do
     lat = get_in(first_result, ["geometry", "location", "lat"]) || 0.0
     lon = get_in(first_result, ["geometry", "location", "lng"]) || 0.0
     
@@ -363,7 +363,18 @@ defmodule TeslaMate.Locations.Geocoder do
     postcode = get_component.(["postal_code"])
     
     # 获取地点名称 - 从 address_descriptor.landmarks.display_name.text 中获取
-    name = get_in(first_result, ["address_descriptor", "landmarks", Access.at(0), "display_name", "text"])
+    # 优先选择距离最近的地标（straight_line_distance_meters 最小）
+    name = case response["address_descriptor"] do
+      %{"landmarks" => []} -> nil
+      %{"landmarks" => landmarks} ->
+        # 按距离排序，选择最近的地标
+        sorted_landmarks = Enum.sort_by(landmarks, fn landmark ->
+          get_in(landmark, ["straight_line_distance_meters"]) || Float.infinity()
+        end)
+        
+        get_in(hd(sorted_landmarks), ["display_name", "text"])
+      _ -> nil
+    end
     
     %{
       display_name: first_result["formatted_address"] || "Unknown",
