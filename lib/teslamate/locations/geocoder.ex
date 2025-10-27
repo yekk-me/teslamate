@@ -71,7 +71,8 @@ defmodule TeslaMate.Locations.Geocoder do
     params = [
       latlng: "#{lat},#{lon}",
       key: api_key,
-      language: lang
+      language: lang,
+      extra_computations: "ADDRESS_DESCRIPTORS"
     ]
     
     headers = [
