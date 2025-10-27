@@ -335,7 +335,7 @@ defmodule TeslaMate.Locations.Geocoder do
     {:error, :no_results}
   end
 
-  defp into_address_google(%{"results" => [first_result | _], "address_descriptor" => address_descriptor}) do
+  defp into_address_google(%{"results" => [first_result | _]} = response) do
     lat = get_in(first_result, ["geometry", "location", "lat"]) || 0.0
     lon = get_in(first_result, ["geometry", "location", "lng"]) || 0.0
     
@@ -364,15 +364,16 @@ defmodule TeslaMate.Locations.Geocoder do
     
     # 获取地点名称 - 从 address_descriptor.landmarks.display_name.text 中获取
     # 优先选择距离最近的地标（straight_line_distance_meters 最小）
-    name = case address_descriptor["landmarks"] do
-      [] -> nil
-      landmarks ->
+    name = case response["address_descriptor"] do
+      %{"landmarks" => []} -> nil
+      %{"landmarks" => landmarks} ->
         # 按距离排序，选择最近的地标
         sorted_landmarks = Enum.sort_by(landmarks, fn landmark ->
           get_in(landmark, ["straight_line_distance_meters"]) || Float.infinity()
         end)
         
         get_in(hd(sorted_landmarks), ["display_name", "text"])
+      _ -> nil
     end
     
     %{
@@ -382,54 +383,6 @@ defmodule TeslaMate.Locations.Geocoder do
       latitude: lat,
       longitude: lon,
       name: name,
-      house_number: house_number,
-      road: road,
-      neighbourhood: neighbourhood,
-      city: city,
-      county: county,
-      postcode: postcode,
-      state: state,
-      state_district: nil,
-      country: country,
-      raw: first_result
-    }
-    |> then(&{:ok, &1})
-  end
-
-  defp into_address_google(%{"results" => [first_result | _]}) do
-    lat = get_in(first_result, ["geometry", "location", "lat"]) || 0.0
-    lon = get_in(first_result, ["geometry", "location", "lng"]) || 0.0
-    
-    # 从地址组件中提取各个部分
-    components = first_result["address_components"] || []
-    
-    # 辅助函数：根据类型获取地址组件
-    get_component = fn types_to_find ->
-      Enum.find_value(components, fn component ->
-        types = component["types"] || []
-        if Enum.any?(types_to_find, &(&1 in types)) do
-          component["long_name"]
-        end
-      end)
-    end
-    
-    # 获取各个地址组件
-    house_number = get_component.(["street_number"])
-    road = get_component.(["route"])
-    neighbourhood = get_component.(["neighborhood", "sublocality", "sublocality_level_1", "sublocality_level_2", "sublocality_level_3", "sublocality_level_4"])
-    city = get_component.(["locality", "administrative_area_level_2"])
-    county = get_component.(["administrative_area_level_2", "administrative_area_level_3"])
-    state = get_component.(["administrative_area_level_1"])
-    country = get_component.(["country"])
-    postcode = get_component.(["postal_code"])
-    
-    %{
-      display_name: first_result["formatted_address"] || "Unknown",
-      osm_id: hash_coordinate(lat, lon),
-      osm_type: "node",
-      latitude: lat,
-      longitude: lon,
-      name: nil,
       house_number: house_number,
       road: road,
       neighbourhood: neighbourhood,
