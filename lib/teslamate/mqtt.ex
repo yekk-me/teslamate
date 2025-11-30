@@ -1,12 +1,32 @@
 defmodule TeslaMate.Mqtt do
   use Supervisor
 
+  require Logger
+
   alias __MODULE__.{Publisher, PubSub, Handler}
 
   # API
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  def restart_pubsub do
+    case Process.whereis(__MODULE__) do
+      nil ->
+        :ok
+
+      _pid ->
+        Logger.info("Restarting MQTT PubSub ...")
+
+        :ok = Supervisor.terminate_child(__MODULE__, PubSub)
+
+        case Supervisor.restart_child(__MODULE__, PubSub) do
+          {:ok, _pid} -> :ok
+          {:ok, _pid, _info} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+    end
   end
 
   @impl true
