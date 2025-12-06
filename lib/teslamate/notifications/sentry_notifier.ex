@@ -157,8 +157,23 @@ defmodule TeslaMate.Notifications.SentryNotifier do
     end
   end
 
-  defp check_sentry_event_triggered(%Summary{center_display_state: 7} = summary, state) do
-    if state.last_display_state != 7 do
+  # center_display_state 值的含义（来自社区逆向工程，非官方文档）：
+  # 0 = Off (屏幕关闭)
+  # 2 = Normal/On (正常开启)
+  # 3 = Charging Screen (充电界面)
+  # 4 = Sentry Mode Standby (哨兵模式待机)
+  # 5 = Dog Mode (狗狗模式)
+  # 6 = Media/Entertainment (媒体/娱乐)
+  # 7 = Sentry Mode Triggered/Recording (哨兵模式已触发，正在录制)
+  # 8 = Camp Mode (露营模式)
+  @sentry_recording_state 7
+
+  defp check_sentry_event_triggered(
+         %Summary{center_display_state: @sentry_recording_state, sentry_mode: true} = summary,
+         state
+       ) do
+    # 只有当 sentry_mode 开启 且 center_display_state == 7 时才认为是哨兵事件触发
+    if state.last_display_state != @sentry_recording_state do
       Logger.warning(
         "🚨 Sentry event TRIGGERED for car #{state.car_id}! Recording in progress. " <>
           "Location: #{summary.latitude}, #{summary.longitude}"
