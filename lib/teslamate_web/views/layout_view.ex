@@ -21,4 +21,8 @@ defmodule TeslaMateWeb.LayoutView do
   def get_admin_dashboard_url(conn) do
     "#{conn.scheme}://#{conn.host}:5050"
   end
+
+  def self_host? do
+    System.get_env("MYTESLA_SELF_HOST") == "true"
+  end
 end
