@@ -94,6 +94,11 @@
                 </div>
               </div>
             <% end %>
+            <%= if self_host?() do %>
+              <a href="/dashboard" class="navbar-item mr-5">
+                <span class="icon"><i class="mdi mdi-view-dashboard-outline"></i></span>&nbsp;<span>Mytesla</span>
+              </a>
+            <% end %>
             <.link
               navigate={Routes.live_path(@conn, TeslaMateWeb.GeoFenceLive.Index)}
               class="navbar-item  mr-5"
