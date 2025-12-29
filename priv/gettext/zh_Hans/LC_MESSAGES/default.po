@@ -595,7 +595,7 @@ msgstr "令牌 无效"
 #: lib/teslamate_web/live/signin_live/index.html.heex:99
 #, elixir-autogen, elixir-format
 msgid "Obtaining tokens through the Tesla API requires programming experience or a 3rd-party service. Information can be found %{here}."
-msgstr "通过 Tesla API 获得令牌需要有编程经验或者借助第三方服务。更多信息可以查看 %{here}。"
+msgstr "如何获取 Token，参考%{here}"
 
 #: lib/teslamate_web/live/signin_live/index.html.heex:92
 #, elixir-autogen, elixir-format
