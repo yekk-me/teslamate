@@ -15,6 +15,7 @@ defmodule TeslaMate.HTTP do
       ],
       "https://nominatim.openstreetmap.org" => [size: 3] ++ nominatim_proxy,
       "https://nominatim-osm.mytesla.cc" => [size: 3],
+      "https://restapi.amap.com" => [size: 3],
       "https://api.github.com" => [size: 1],
       :default => [size: System.get_env("HTTP_POOL_SIZE", "5") |> String.to_integer()]
     }

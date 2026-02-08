@@ -30,7 +30,11 @@ defmodule TeslaMate.Locations.Geocoder do
     trimmed_ak = if bd_map_ak, do: String.trim(bd_map_ak), else: ""
     bd_map_sk = System.get_env("BD_MAP_SK")
     trimmed_sk = if bd_map_sk, do: String.trim(bd_map_sk), else: ""
-    
+
+    # Check for Amap API key
+    amap_key = System.get_env("AMAP_API_KEY")
+    trimmed_amap_key = if amap_key, do: String.trim(amap_key), else: ""
+
     cond do
       # Prefer Google Maps if API key is available
       trimmed_google_key != "" ->
@@ -38,14 +42,23 @@ defmodule TeslaMate.Locations.Geocoder do
              {:ok, address} <- into_address_google(address_raw) do
           {:ok, address}
         end
-        
+
       # Fall back to Baidu Maps if API keys are available
       trimmed_ak != "" && trimmed_sk != "" ->
         with {:ok, address_raw} <- baidu_reverse_lookup(lat, lon, lang),
             {:ok, address} <- into_address_baidu(address_raw) do
           {:ok, address}
         end
-        
+
+      # Fall back to Amap if API key is available
+      trimmed_amap_key != "" ->
+        lat_f = to_float(lat)
+        lon_f = to_float(lon)
+        with {:ok, address_raw} <- amap_reverse_lookup(lat, lon, lang),
+             {:ok, address} <- into_address_amap(address_raw) do
+          {:ok, %{address | latitude: lat_f, longitude: lon_f, osm_id: hash_coordinate(lat_f, lon_f)}}
+        end
+
       # Default to OSM
       true ->
         opts = [
@@ -135,6 +148,65 @@ defmodule TeslaMate.Locations.Geocoder do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  def amap_reverse_lookup(lat, lon, _lang) do
+    api_key = System.get_env("AMAP_API_KEY")
+    {gcj_lat, gcj_lon} = wgs84_to_gcj02(to_float(lat), to_float(lon))
+
+    params = [
+      key: api_key,
+      location: "#{gcj_lon},#{gcj_lat}",
+      extensions: "all",
+      poitype: ""
+    ]
+
+    url = "https://restapi.amap.com/v3/geocode/regeo"
+
+    case get(url, query: params) do
+      {:ok, %Tesla.Env{status: 200, body: %{"status" => "1"} = body}} -> {:ok, body}
+      {:ok, %Tesla.Env{status: 200, body: %{"info" => info, "infocode" => code}}} ->
+        {:error, {:amap_api_failure, info, code}}
+      {:ok, %Tesla.Env{} = env} -> {:error, reason: "Unexpected response", env: env}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp wgs84_to_gcj02(lat, lon) do
+    a = 6_378_245.0
+    ee = 0.00669342162296594323
+
+    d_lat = transform_lat(lon - 105.0, lat - 35.0)
+    d_lon = transform_lon(lon - 105.0, lat - 35.0)
+
+    rad_lat = lat / 180.0 * :math.pi()
+    magic = :math.sin(rad_lat)
+    magic = 1 - ee * magic * magic
+    sqrt_magic = :math.sqrt(magic)
+
+    d_lat = d_lat * 180.0 / ((a * (1 - ee)) / (magic * sqrt_magic) * :math.pi())
+    d_lon = d_lon * 180.0 / (a / sqrt_magic * :math.cos(rad_lat) * :math.pi())
+
+    {lat + d_lat, lon + d_lon}
+  end
+
+  defp transform_lat(x, y) do
+    ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * :math.sqrt(abs(x))
+    ret = ret + (20.0 * :math.sin(6.0 * x * :math.pi()) + 20.0 * :math.sin(2.0 * x * :math.pi())) * 2.0 / 3.0
+    ret = ret + (20.0 * :math.sin(y * :math.pi()) + 40.0 * :math.sin(y / 3.0 * :math.pi())) * 2.0 / 3.0
+    ret + (160.0 * :math.sin(y / 12.0 * :math.pi()) + 320 * :math.sin(y * :math.pi() / 30.0)) * 2.0 / 3.0
+  end
+
+  defp transform_lon(x, y) do
+    ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * :math.sqrt(abs(x))
+    ret = ret + (20.0 * :math.sin(6.0 * x * :math.pi()) + 20.0 * :math.sin(2.0 * x * :math.pi())) * 2.0 / 3.0
+    ret = ret + (20.0 * :math.sin(x * :math.pi()) + 40.0 * :math.sin(x / 3.0 * :math.pi())) * 2.0 / 3.0
+    ret + (150.0 * :math.sin(x / 12.0 * :math.pi()) + 300.0 * :math.sin(x / 30.0 * :math.pi())) * 2.0 / 3.0
+  end
+
+  defp to_float(%Decimal{} = d), do: Decimal.to_float(d)
+  defp to_float(v) when is_binary(v), do: String.to_float(v)
+  defp to_float(v) when is_float(v), do: v
+  defp to_float(v) when is_integer(v), do: v * 1.0
 
   def details(addresses, lang) when is_list(addresses) do
     osm_ids =
@@ -330,6 +402,40 @@ defmodule TeslaMate.Locations.Geocoder do
   end
 
   defp into_address_baidu(_unexpected), do: {:error, :invalid_response_format}
+
+  defp into_address_amap(%{"status" => "1", "regeocode" => regeocode} = _body) do
+    addr = regeocode["addressComponent"] || %{}
+
+    name =
+      get_in(regeocode, ["aois", Access.at(0), "name"]) ||
+        get_in(regeocode, ["pois", Access.at(0), "name"])
+
+    %{
+      display_name: regeocode["formatted_address"] || "未知位置",
+      osm_id: nil,
+      osm_type: "node",
+      latitude: nil,
+      longitude: nil,
+      name: name,
+      house_number: get_in(addr, ["streetNumber", "number"]),
+      road: get_in(addr, ["streetNumber", "street"]),
+      neighbourhood: addr["township"],
+      city: addr["city"],
+      county: addr["district"],
+      postcode: addr["adcode"],
+      state: addr["province"],
+      state_district: nil,
+      country: addr["country"],
+      raw: regeocode
+    }
+    |> then(&{:ok, &1})
+  end
+
+  defp into_address_amap(%{"status" => _s, "info" => info, "infocode" => code}) do
+    {:error, {:amap_api_failure, info, code}}
+  end
+
+  defp into_address_amap(_unexpected), do: {:error, :invalid_response_format}
 
   defp into_address_google(%{"results" => []}) do
     {:error, :no_results}
