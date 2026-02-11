@@ -407,29 +407,33 @@ defmodule TeslaMate.Locations.Geocoder do
     addr = regeocode["addressComponent"] || %{}
 
     name =
-      get_in(regeocode, ["aois", Access.at(0), "name"]) ||
-        get_in(regeocode, ["pois", Access.at(0), "name"])
+      amap_string(get_in(regeocode, ["aois", Access.at(0), "name"])) ||
+        amap_string(get_in(regeocode, ["pois", Access.at(0), "name"]))
 
     %{
-      display_name: regeocode["formatted_address"] || "未知位置",
+      display_name: amap_string(regeocode["formatted_address"]) || "未知位置",
       osm_id: nil,
       osm_type: "node",
       latitude: nil,
       longitude: nil,
       name: name,
-      house_number: get_in(addr, ["streetNumber", "number"]),
-      road: get_in(addr, ["streetNumber", "street"]),
-      neighbourhood: addr["township"],
-      city: addr["city"],
-      county: addr["district"],
-      postcode: addr["adcode"],
-      state: addr["province"],
+      house_number: amap_string(get_in(addr, ["streetNumber", "number"])),
+      road: amap_string(get_in(addr, ["streetNumber", "street"])),
+      neighbourhood: amap_string(addr["township"]),
+      city: amap_string(addr["city"]),
+      county: amap_string(addr["district"]),
+      postcode: amap_string(addr["adcode"]),
+      state: amap_string(addr["province"]),
       state_district: nil,
-      country: addr["country"],
+      country: amap_string(addr["country"]),
       raw: regeocode
     }
     |> then(&{:ok, &1})
   end
+
+  # Amap API returns [] for missing string fields instead of null
+  defp amap_string(v) when is_binary(v) and v != "", do: v
+  defp amap_string(_), do: nil
 
   defp into_address_amap(%{"status" => _s, "info" => info, "infocode" => code}) do
     {:error, {:amap_api_failure, info, code}}
