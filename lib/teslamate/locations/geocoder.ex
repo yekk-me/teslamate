@@ -12,20 +12,70 @@ defmodule TeslaMate.Locations.Geocoder do
 
   alias TeslaMate.Locations.Address
 
+  defp hash_coordinate(lat, lon) when is_float(lat) and is_float(lon) do
+    lat_rounded = Float.round(lat, 6)
+    lon_rounded = Float.round(lon, 6)
+    :erlang.phash2({lat_rounded, lon_rounded}, 13_421_772_799)
+  rescue
+    _ -> :erlang.phash2({lat, lon})
+  end
+
   def reverse_lookup(lat, lon, lang \\ "en") do
-    opts = [
-      format: :jsonv2,
-      addressdetails: 1,
-      extratags: 1,
-      namedetails: 1,
-      zoom: 19,
-      lat: lat,
-      lon: lon
+    google_api_key = System.get_env("GOOGLE_MAPS_API_KEY")
+    trimmed_google_key = if google_api_key, do: String.trim(google_api_key), else: ""
+
+    if trimmed_google_key != "" do
+      with {:ok, address_raw} <- google_reverse_lookup(lat, lon, lang),
+           {:ok, address} <- into_address_google(address_raw) do
+        {:ok, address}
+      end
+    else
+      opts = [
+        format: :jsonv2,
+        addressdetails: 1,
+        extratags: 1,
+        namedetails: 1,
+        zoom: 19,
+        lat: lat,
+        lon: lon
+      ]
+
+      with {:ok, address_raw} <- query("/reverse", lang, opts),
+           {:ok, address} <- into_address(address_raw) do
+        {:ok, address}
+      end
+    end
+  end
+
+  def google_reverse_lookup(lat, lon, lang) do
+    api_key = System.get_env("GOOGLE_MAPS_API_KEY")
+
+    params = [
+      latlng: "#{lat},#{lon}",
+      key: api_key,
+      language: lang,
+      extra_computations: "ADDRESS_DESCRIPTORS"
     ]
 
-    with {:ok, address_raw} <- query("/reverse", lang, opts),
-         {:ok, address} <- into_address(address_raw) do
-      {:ok, address}
+    headers = [
+      {"Content-Type", "application/json"},
+      {"X-Goog-Api-Key", api_key}
+    ]
+
+    url = "https://maps.googleapis.com/maps/api/geocode/json"
+
+    case get(url, query: params, headers: headers) do
+      {:ok, %Tesla.Env{status: 200, body: %{"status" => "OK"} = body}} ->
+        {:ok, body}
+
+      {:ok, %Tesla.Env{status: 200, body: %{"status" => status}}} ->
+        {:error, {:google_api_error, status}}
+
+      {:ok, %Tesla.Env{} = env} ->
+        {:error, reason: "Unexpected response", env: env}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -172,6 +222,89 @@ defmodule TeslaMate.Locations.Geocoder do
 
     {:ok, address}
   end
+
+  defp into_address_google(%{"results" => []}) do
+    {:error, :no_results}
+  end
+
+  defp into_address_google(%{"results" => [first_result | _]} = response) do
+    lat = get_in(first_result, ["geometry", "location", "lat"]) || 0.0
+    lon = get_in(first_result, ["geometry", "location", "lng"]) || 0.0
+
+    components = first_result["address_components"] || []
+
+    get_component = fn types_to_find ->
+      Enum.find_value(components, fn component ->
+        types = component["types"] || []
+
+        if Enum.any?(types_to_find, &(&1 in types)) do
+          component["long_name"]
+        end
+      end)
+    end
+
+    house_number = get_component.(["street_number"])
+    road = get_component.(["route"])
+
+    neighbourhood =
+      get_component.([
+        "neighborhood",
+        "sublocality",
+        "sublocality_level_1",
+        "sublocality_level_2",
+        "sublocality_level_3",
+        "sublocality_level_4"
+      ])
+
+    city = get_component.(["locality", "administrative_area_level_2"])
+    county = get_component.(["administrative_area_level_2", "administrative_area_level_3"])
+    state = get_component.(["administrative_area_level_1"])
+    country = get_component.(["country"])
+    postcode = get_component.(["postal_code"])
+
+    name =
+      case response["address_descriptor"] do
+        %{"landmarks" => []} ->
+          nil
+
+        %{"landmarks" => landmarks} ->
+          sorted_landmarks =
+            Enum.sort_by(landmarks, fn landmark ->
+              get_in(landmark, ["straight_line_distance_meters"]) || Float.infinity()
+            end)
+
+          get_in(hd(sorted_landmarks), ["display_name", "text"])
+
+        _ ->
+          nil
+      end
+
+    %{
+      display_name: first_result["formatted_address"] || "Unknown",
+      osm_id: hash_coordinate(lat, lon),
+      osm_type: "node",
+      latitude: lat,
+      longitude: lon,
+      name: name,
+      house_number: house_number,
+      road: road,
+      neighbourhood: neighbourhood,
+      city: city,
+      county: county,
+      postcode: postcode,
+      state: state,
+      state_district: nil,
+      country: country,
+      raw: first_result
+    }
+    |> then(&{:ok, &1})
+  end
+
+  defp into_address_google(%{"status" => status}) do
+    {:error, {:google_api_error, status}}
+  end
+
+  defp into_address_google(_unexpected), do: {:error, :invalid_response_format}
 
   defp get_first(nil, _aliases), do: nil
   defp get_first(_address, []), do: nil
