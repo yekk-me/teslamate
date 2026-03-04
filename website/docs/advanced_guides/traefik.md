@@ -79,7 +79,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PW}
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_SERVER_DOMAIN=${FQDN_TM}
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana
+      - GF_SERVER_ROOT_URL=https://%(domain)s/grafana
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
 
     volumes:
@@ -105,7 +105,7 @@ services:
       - mosquitto-data:/mosquitto/data
 
   proxy:
-    image: traefik:v3.5
+    image: traefik:v3.6
     restart: always
     command:
       - "--global.sendAnonymousUsage=false"

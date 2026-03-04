@@ -1,4 +1,4 @@
-FROM elixir:1.18.4-otp-26 AS builder
+FROM elixir:1.19.5-otp-26 AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -12,7 +12,7 @@ RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm main contrib 
     echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
 
 RUN apt-get update \
-    && apt-get install -y ca-certificates curl gnupg \
+    && apt-get install -y ca-certificates curl gnupg zstd brotli \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
      | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
