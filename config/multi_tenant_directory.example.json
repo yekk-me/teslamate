@@ -1,0 +1,44 @@
+{
+  "tenants": [
+    {
+      "id": "tenant-demo-a",
+      "user_id": "user-demo-a",
+      "status": "active",
+      "database": {
+        "host": "pgbouncer",
+        "port": 6432,
+        "username": "teslamate_demo_a",
+        "password": "change-me",
+        "name": "teslamate_demo_a",
+        "pooler": "pgbouncer",
+        "pool_size": 1,
+        "ssl": false
+      },
+      "mqtt": {
+        "host": "localhost",
+        "port": 1883,
+        "namespace": "tenant-demo-a"
+      },
+      "entitlements": {
+        "enabled": true,
+        "logging": true
+      },
+      "limits": {
+        "max_vehicles": 5,
+        "max_active_vehicles": 5,
+        "tesla_api_requests_per_minute": 120,
+        "mqtt_publishes_per_minute": 600
+      },
+      "vehicles": [
+        {
+          "id": "1",
+          "vin": "VIN-DEMO-A",
+          "vid": "200000001",
+          "eid": "100000001",
+          "display_name": "Demo Model Y",
+          "status": "active"
+        }
+      ]
+    }
+  ]
+}

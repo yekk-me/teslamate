@@ -30,6 +30,11 @@ defmodule TeslaMateWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :internal_api do
+    plug :accepts, ["json"]
+    plug TeslaMateWeb.Plugs.InternalApiAuth
+  end
+
   scope "/", TeslaMateWeb do
     pipe_through :browser
 
@@ -52,6 +57,12 @@ defmodule TeslaMateWeb.Router do
 
     put "/car/:id/logging/resume", CarController, :resume_logging
     put "/car/:id/logging/suspend", CarController, :suspend_logging
+  end
+
+  scope "/api/internal", TeslaMateWeb do
+    pipe_through :internal_api
+
+    post "/tenants/:tenant_id/authorize", MultiTenantAuthController, :authorize
   end
 
   def fetch_settings(conn, _opts) do

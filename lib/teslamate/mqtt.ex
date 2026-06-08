@@ -8,20 +8,20 @@ defmodule TeslaMate.Mqtt do
   # API
 
   def start_link(opts) do
-    Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
+    Supervisor.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
-  def restart_pubsub do
-    case Process.whereis(__MODULE__) do
+  def restart_pubsub(name \\ __MODULE__) do
+    case GenServer.whereis(name) do
       nil ->
         :ok
 
       _pid ->
         Logger.info("Restarting MQTT PubSub ...")
 
-        :ok = Supervisor.terminate_child(__MODULE__, PubSub)
+        :ok = Supervisor.terminate_child(name, PubSub)
 
-        case Supervisor.restart_child(__MODULE__, PubSub) do
+        case Supervisor.restart_child(name, PubSub) do
           {:ok, _pid} -> :ok
           {:ok, _pid, _info} -> :ok
           {:error, reason} -> {:error, reason}
@@ -32,11 +32,19 @@ defmodule TeslaMate.Mqtt do
   @impl true
   def init(opts) do
     client_id = generate_client_id()
+    publisher_name = Keyword.get(opts, :publisher_name, Publisher)
+    pubsub_name = Keyword.get(opts, :pubsub_name, PubSub)
+    tenant_id = Keyword.get(opts, :tenant_id)
 
     children = [
       {Tortoise311.Connection, connection_config(opts) ++ [client_id: client_id]},
-      {Publisher, client_id: client_id},
-      {PubSub, namespace: opts[:namespace]}
+      {Publisher, client_id: client_id, name: publisher_name, tenant_id: tenant_id},
+      {PubSub,
+       namespace: opts[:namespace],
+       name: pubsub_name,
+       publisher: {Publisher, publisher_name},
+       vehicles: Keyword.get(opts, :vehicles),
+       car_ids: Keyword.get(opts, :car_ids)}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

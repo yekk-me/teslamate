@@ -46,6 +46,7 @@ npm-debug.log
 /config/*.secret.exs
 config/*.env
 .env
+/.local/
 
 /import/
 .srtm_cache/

@@ -96,6 +96,29 @@ defmodule Util do
   def get_env(varname, defaults \\ []) do
     System.get_env(varname, defaults[config_env()])
   end
+
+  def parse_log_level(nil), do: nil
+  def parse_log_level(""), do: nil
+
+  def parse_log_level(level) when is_binary(level) do
+    case String.downcase(level) do
+      "debug" -> :debug
+      "info" -> :info
+      "notice" -> :notice
+      "warning" -> :warning
+      "warn" -> :warning
+      "error" -> :error
+      "critical" -> :critical
+      "alert" -> :alert
+      "emergency" -> :emergency
+      "none" -> :none
+      invalid -> raise "Invalid LOGGER_LEVEL: #{inspect(invalid)}"
+    end
+  end
+end
+
+if log_level = System.get_env("LOGGER_LEVEL") |> Util.parse_log_level() do
+  config :logger, level: log_level
 end
 
 config :teslamate,

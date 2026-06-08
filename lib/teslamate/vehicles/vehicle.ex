@@ -22,6 +22,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
               elevation: nil,
               geofence: nil,
               deps: %{},
+              tenant_id: nil,
               task: nil,
               import?: false,
               stream_pid: nil
@@ -125,17 +126,23 @@ defmodule TeslaMate.Vehicles.Vehicle do
     )
   end
 
-  def subscribe_to_summary(car_id) do
-    Phoenix.PubSub.subscribe(TeslaMate.PubSub, summary_topic(car_id))
+  def subscribe_to_summary(car_id), do: subscribe_to_summary(nil, car_id)
+
+  def subscribe_to_summary(tenant_id, car_id) do
+    Phoenix.PubSub.subscribe(TeslaMate.PubSub, summary_topic(tenant_id, car_id))
   end
 
-  def subscribe_to_fetch(car_id) do
-    Phoenix.PubSub.subscribe(TeslaMate.PubSub, fetch_topic(car_id))
+  def subscribe_to_fetch(car_id), do: subscribe_to_fetch(nil, car_id)
+
+  def subscribe_to_fetch(tenant_id, car_id) do
+    Phoenix.PubSub.subscribe(TeslaMate.PubSub, fetch_topic(tenant_id, car_id))
   end
 
-  def healthy?(car_id) do
-    with :ok <- :fuse.ask(fuse_name(:api_error, car_id), :sync),
-         :ok <- :fuse.ask(fuse_name(:vehicle_not_found, car_id), :sync) do
+  def healthy?(car_id), do: healthy?(nil, car_id)
+
+  def healthy?(tenant_id, car_id) do
+    with :ok <- :fuse.ask(fuse_name(:api_error, tenant_id, car_id), :sync),
+         :ok <- :fuse.ask(fuse_name(:vehicle_not_found, tenant_id, car_id), :sync) do
       true
     else
       :blown -> false
@@ -159,6 +166,12 @@ defmodule TeslaMate.Vehicles.Vehicle do
 
   @impl true
   def init(opts) do
+    tenant_id = Keyword.get(opts, :tenant_id)
+
+    if is_binary(tenant_id) do
+      TeslaMate.MultiTenant.TenantContext.put(tenant_id)
+    end
+
     %Car{settings: %CarSettings{}} = car = Keyword.fetch!(opts, :car)
 
     deps = %{
@@ -180,6 +193,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
       last_used: DateTime.utc_now(),
       last_state_change: last_state_change,
       deps: deps,
+      tenant_id: tenant_id,
       import?: Keyword.get(opts, :import?, false)
     }
 
@@ -189,7 +203,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
     ]
 
     for {key, opts} <- fuses do
-      name = fuse_name(key, data.car.id)
+      name = fuse_name(key, data.tenant_id, data.car.id)
       :ok = :fuse.install(name, opts)
       :ok = :fuse.circuit_enable(name)
     end
@@ -208,7 +222,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
       Summary.into(vehicle, %{
         state: state,
         since: data.last_state_change,
-        healthy?: healthy?(data.car.id),
+        healthy?: healthy?(data.tenant_id, data.car.id),
         elevation: data.elevation,
         geofence: data.geofence,
         car: data.car
@@ -390,7 +404,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
       {:error, :not_signed_in} ->
         Logger.error("Error / not_signed_in", car_id: data.car.id)
 
-        :ok = fuse_name(:api_error, data.car.id) |> :fuse.circuit_disable()
+        :ok = fuse_name(:api_error, data.tenant_id, data.car.id) |> :fuse.circuit_disable()
 
         # Stop polling
         {:next_state, :start, data, [broadcast_fetch(false), broadcast_summary()]}
@@ -398,12 +412,16 @@ defmodule TeslaMate.Vehicles.Vehicle do
       {:error, :vehicle_not_found} ->
         Logger.error("Error / :vehicle_not_found", car_id: data.car.id)
 
-        fuse_name = fuse_name(:vehicle_not_found, data.car.id)
-        :ok = :fuse.melt(fuse_name(:api_error, data.car.id))
+        fuse_name = fuse_name(:vehicle_not_found, data.tenant_id, data.car.id)
+        :ok = :fuse.melt(fuse_name(:api_error, data.tenant_id, data.car.id))
         :ok = :fuse.melt(fuse_name)
 
         with :blown <- :fuse.ask(fuse_name, :sync) do
-          true = call(data.deps.vehicles, :kill)
+          if is_binary(data.tenant_id) do
+            true = call(data.deps.vehicles, :kill, [data.car.id])
+          else
+            true = call(data.deps.vehicles, :kill)
+          end
         end
 
         {:keep_state, data,
@@ -418,8 +436,8 @@ defmodule TeslaMate.Vehicles.Vehicle do
       {:error, reason} ->
         Logger.error("Error / #{inspect(reason)}", car_id: data.car.id)
 
-        unless reason in [:timeout, :unauthorized] do
-          :ok = fuse_name(:api_error, data.car.id) |> :fuse.melt()
+        unless reason in [:timeout, :unauthorized, :rate_limited] do
+          :ok = fuse_name(:api_error, data.tenant_id, data.car.id) |> :fuse.melt()
         end
 
         interval =
@@ -667,7 +685,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
   def handle_event(event, :fetch, state, %Data{task: nil} = data)
       when event in [:state_timeout, :internal] do
     task =
-      Task.async(fn ->
+      TeslaMate.MultiTenant.TenantTask.async(data.tenant_id, fn ->
         fetch(data, expected_state: state)
       end)
 
@@ -681,7 +699,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
   end
 
   def handle_event(:internal, :fetch_state, _state, %Data{car: car} = data) do
-    Task.async(fn ->
+    TeslaMate.MultiTenant.TenantTask.async(data.tenant_id, fn ->
       with {:ok, %Vehicle{state: state} = vehicle} when is_binary(state) <-
              call(data.deps.api, :get_vehicle, [car.eid]) do
         {String.to_existing_atom(state), vehicle}
@@ -698,14 +716,18 @@ defmodule TeslaMate.Vehicles.Vehicle do
       Summary.into(vehicle, %{
         state: state,
         since: data.last_state_change,
-        healthy?: healthy?(data.car.id),
+        healthy?: healthy?(data.tenant_id, data.car.id),
         elevation: data.elevation,
         geofence: data.geofence,
         car: data.car
       })
 
     :ok =
-      call(data.deps.pubsub, :broadcast, [TeslaMate.PubSub, summary_topic(data.car.id), payload])
+      call(data.deps.pubsub, :broadcast, [
+        TeslaMate.PubSub,
+        summary_topic(data.tenant_id, data.car.id),
+        payload
+      ])
 
     :keep_state_and_data
   end
@@ -716,7 +738,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
     :ok =
       call(data.deps.pubsub, :broadcast, [
         TeslaMate.PubSub,
-        fetch_topic(data.car.id),
+        fetch_topic(data.tenant_id, data.car.id),
         {:status, status}
       ])
 
@@ -1685,14 +1707,23 @@ defmodule TeslaMate.Vehicles.Vehicle do
     Stream.disconnect(pid)
   end
 
-  defp summary_topic(car_id) when is_number(car_id), do: "#{__MODULE__}/summary/#{car_id}"
-  defp fetch_topic(car_id) when is_number(car_id), do: "#{__MODULE__}/fetch/#{car_id}"
+  defp summary_topic(nil, car_id), do: "#{__MODULE__}/summary/#{car_id}"
+  defp summary_topic(tenant_id, car_id), do: "#{__MODULE__}/summary/#{tenant_id}/#{car_id}"
+
+  defp fetch_topic(nil, car_id), do: "#{__MODULE__}/fetch/#{car_id}"
+  defp fetch_topic(tenant_id, car_id), do: "#{__MODULE__}/fetch/#{tenant_id}/#{car_id}"
 
   defp determince_interval(n) when is_nil(n) or n <= 0, do: 5
   defp determince_interval(n), do: round(250 / n) |> min(20) |> max(charging_interval())
 
-  defp fuse_name(:vehicle_not_found, car_id), do: :"#{__MODULE__}_#{car_id}_not_found"
-  defp fuse_name(:api_error, car_id), do: :"#{__MODULE__}_#{car_id}_api_error"
+  defp fuse_name(:vehicle_not_found, tenant_id, car_id),
+    do: :"#{__MODULE__}_#{tenant_scope(tenant_id)}_#{car_id}_not_found"
+
+  defp fuse_name(:api_error, tenant_id, car_id),
+    do: :"#{__MODULE__}_#{tenant_scope(tenant_id)}_#{car_id}_api_error"
+
+  defp tenant_scope(nil), do: "single"
+  defp tenant_scope(tenant_id), do: "tenant_#{:erlang.phash2(tenant_id)}"
 
   defp broadcast_summary, do: {:next_event, :internal, :broadcast_summary}
   defp broadcast_fetch(status), do: {:next_event, :internal, {:broadcast_fetch, status}}

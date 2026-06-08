@@ -11,12 +11,22 @@ defmodule TeslaMate.Application do
     :ok = :telemetry.detach({Phoenix.Logger, [:phoenix, :socket_connected]})
     :ok = :telemetry.detach({Phoenix.Logger, [:phoenix, :channel_joined]})
 
-    TeslaMate.DatabaseCheck.check_postgres_version()
+    unless TeslaMate.MultiTenant.enabled?() do
+      TeslaMate.DatabaseCheck.check_postgres_version()
+    end
 
     Supervisor.start_link(children(), strategy: :one_for_one, name: TeslaMate.Supervisor)
   end
 
   defp children do
+    if TeslaMate.MultiTenant.enabled?() do
+      multi_tenant_children()
+    else
+      single_tenant_children()
+    end
+  end
+
+  defp single_tenant_children do
     mqtt_config = Application.get_env(:teslamate, :mqtt)
 
     case Application.get_env(:teslamate, :import_directory) do
@@ -50,6 +60,19 @@ defmodule TeslaMate.Application do
           {TeslaMate.Import, directory: import_directory}
         ]
     end
+  end
+
+  defp multi_tenant_children do
+    [
+      {Registry, keys: :unique, name: TeslaMate.MultiTenant.Registry},
+      TeslaMate.Vault,
+      TeslaMate.HTTP,
+      {Phoenix.PubSub, name: TeslaMate.PubSub},
+      if(TeslaMate.MultiTenant.start_web?(), do: TeslaMateWeb.Endpoint),
+      TeslaMate.MultiTenant.RuntimeSupervisor,
+      TeslaMate.MultiTenant.ControlLoop
+    ]
+    |> Enum.reject(&is_nil/1)
   end
 
   defp system_info do

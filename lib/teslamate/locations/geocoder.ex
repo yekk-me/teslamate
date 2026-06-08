@@ -24,7 +24,7 @@ defmodule TeslaMate.Locations.Geocoder do
     # Check for Google Maps API key first
     google_api_key = System.get_env("GOOGLE_MAPS_API_KEY")
     trimmed_google_key = if google_api_key, do: String.trim(google_api_key), else: ""
-    
+
     # Check for Baidu Maps API keys
     bd_map_ak = System.get_env("BD_MAP_AK")
     trimmed_ak = if bd_map_ak, do: String.trim(bd_map_ak), else: ""
@@ -46,7 +46,7 @@ defmodule TeslaMate.Locations.Geocoder do
       # Fall back to Baidu Maps if API keys are available
       trimmed_ak != "" && trimmed_sk != "" ->
         with {:ok, address_raw} <- baidu_reverse_lookup(lat, lon, lang),
-            {:ok, address} <- into_address_baidu(address_raw) do
+             {:ok, address} <- into_address_baidu(address_raw) do
           {:ok, address}
         end
 
@@ -54,9 +54,11 @@ defmodule TeslaMate.Locations.Geocoder do
       trimmed_amap_key != "" ->
         lat_f = to_float(lat)
         lon_f = to_float(lon)
+
         with {:ok, address_raw} <- amap_reverse_lookup(lat, lon, lang),
              {:ok, address} <- into_address_amap(address_raw) do
-          {:ok, %{address | latitude: lat_f, longitude: lon_f, osm_id: hash_coordinate(lat_f, lon_f)}}
+          {:ok,
+           %{address | latitude: lat_f, longitude: lon_f, osm_id: hash_coordinate(lat_f, lon_f)}}
         end
 
       # Default to OSM
@@ -80,29 +82,32 @@ defmodule TeslaMate.Locations.Geocoder do
 
   def google_reverse_lookup(lat, lon, lang) do
     api_key = System.get_env("GOOGLE_MAPS_API_KEY")
-    
+
     params = [
       latlng: "#{lat},#{lon}",
       key: api_key,
       language: lang,
       extra_computations: "ADDRESS_DESCRIPTORS"
     ]
-    
+
     headers = [
       {"Content-Type", "application/json"},
       {"X-Goog-Api-Key", api_key}
     ]
-    
+
     url = "https://maps.googleapis.com/maps/api/geocode/json"
-    
+
     case get(url, query: params, headers: headers) do
-      {:ok, %Tesla.Env{status: 200, body: %{"status" => "OK"} = body}} -> 
+      {:ok, %Tesla.Env{status: 200, body: %{"status" => "OK"} = body}} ->
         {:ok, body}
-      {:ok, %Tesla.Env{status: 200, body: %{"status" => status}}} -> 
+
+      {:ok, %Tesla.Env{status: 200, body: %{"status" => status}}} ->
         {:error, {:google_api_error, status}}
-      {:ok, %Tesla.Env{} = env} -> 
+
+      {:ok, %Tesla.Env{} = env} ->
         {:error, reason: "Unexpected response", env: env}
-      {:error, reason} -> 
+
+      {:error, reason} ->
         {:error, reason}
     end
   end
@@ -141,6 +146,7 @@ defmodule TeslaMate.Locations.Geocoder do
       |> Keyword.put(:sn, sn)
 
     url = "https://api.map.baidu.com/reverse_geocoding/v3"
+
     case get(url, query: final_params, headers: [{"Accept-Language", lang}]) do
       {:ok, %Tesla.Env{status: 200, body: body}} -> {:ok, body}
       {:ok, %Tesla.Env{body: %{"error" => reason}}} -> {:error, reason}
@@ -163,11 +169,17 @@ defmodule TeslaMate.Locations.Geocoder do
     url = "https://restapi.amap.com/v3/geocode/regeo"
 
     case get(url, query: params) do
-      {:ok, %Tesla.Env{status: 200, body: %{"status" => "1"} = body}} -> {:ok, body}
+      {:ok, %Tesla.Env{status: 200, body: %{"status" => "1"} = body}} ->
+        {:ok, body}
+
       {:ok, %Tesla.Env{status: 200, body: %{"info" => info, "infocode" => code}}} ->
         {:error, {:amap_api_failure, info, code}}
-      {:ok, %Tesla.Env{} = env} -> {:error, reason: "Unexpected response", env: env}
-      {:error, reason} -> {:error, reason}
+
+      {:ok, %Tesla.Env{} = env} ->
+        {:error, reason: "Unexpected response", env: env}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -183,7 +195,7 @@ defmodule TeslaMate.Locations.Geocoder do
     magic = 1 - ee * magic * magic
     sqrt_magic = :math.sqrt(magic)
 
-    d_lat = d_lat * 180.0 / ((a * (1 - ee)) / (magic * sqrt_magic) * :math.pi())
+    d_lat = d_lat * 180.0 / (a * (1 - ee) / (magic * sqrt_magic) * :math.pi())
     d_lon = d_lon * 180.0 / (a / sqrt_magic * :math.cos(rad_lat) * :math.pi())
 
     {lat + d_lat, lon + d_lon}
@@ -191,16 +203,36 @@ defmodule TeslaMate.Locations.Geocoder do
 
   defp transform_lat(x, y) do
     ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * :math.sqrt(abs(x))
-    ret = ret + (20.0 * :math.sin(6.0 * x * :math.pi()) + 20.0 * :math.sin(2.0 * x * :math.pi())) * 2.0 / 3.0
-    ret = ret + (20.0 * :math.sin(y * :math.pi()) + 40.0 * :math.sin(y / 3.0 * :math.pi())) * 2.0 / 3.0
-    ret + (160.0 * :math.sin(y / 12.0 * :math.pi()) + 320 * :math.sin(y * :math.pi() / 30.0)) * 2.0 / 3.0
+
+    ret =
+      ret +
+        (20.0 * :math.sin(6.0 * x * :math.pi()) + 20.0 * :math.sin(2.0 * x * :math.pi())) * 2.0 /
+          3.0
+
+    ret =
+      ret +
+        (20.0 * :math.sin(y * :math.pi()) + 40.0 * :math.sin(y / 3.0 * :math.pi())) * 2.0 / 3.0
+
+    ret +
+      (160.0 * :math.sin(y / 12.0 * :math.pi()) + 320 * :math.sin(y * :math.pi() / 30.0)) * 2.0 /
+        3.0
   end
 
   defp transform_lon(x, y) do
     ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * :math.sqrt(abs(x))
-    ret = ret + (20.0 * :math.sin(6.0 * x * :math.pi()) + 20.0 * :math.sin(2.0 * x * :math.pi())) * 2.0 / 3.0
-    ret = ret + (20.0 * :math.sin(x * :math.pi()) + 40.0 * :math.sin(x / 3.0 * :math.pi())) * 2.0 / 3.0
-    ret + (150.0 * :math.sin(x / 12.0 * :math.pi()) + 300.0 * :math.sin(x / 30.0 * :math.pi())) * 2.0 / 3.0
+
+    ret =
+      ret +
+        (20.0 * :math.sin(6.0 * x * :math.pi()) + 20.0 * :math.sin(2.0 * x * :math.pi())) * 2.0 /
+          3.0
+
+    ret =
+      ret +
+        (20.0 * :math.sin(x * :math.pi()) + 40.0 * :math.sin(x / 3.0 * :math.pi())) * 2.0 / 3.0
+
+    ret +
+      (150.0 * :math.sin(x / 12.0 * :math.pi()) + 300.0 * :math.sin(x / 30.0 * :math.pi())) * 2.0 /
+        3.0
   end
 
   defp to_float(%Decimal{} = d), do: Decimal.to_float(d)
@@ -369,9 +401,9 @@ defmodule TeslaMate.Locations.Geocoder do
     # 显示名称优先级：格式化地址 > POI名称 > 默认值
     display_name =
       result["formatted_address_poi"] ||
-      result["formatted_address"] ||
-      poi_name ||
-      "未知位置"
+        result["formatted_address"] ||
+        poi_name ||
+        "未知位置"
 
     # 名称字段优先级：POI名称 > 商圈名称 > 默认值
     name = poi_name || result["business"] || "未命名区域"
@@ -431,15 +463,15 @@ defmodule TeslaMate.Locations.Geocoder do
     |> then(&{:ok, &1})
   end
 
-  # Amap API returns [] for missing string fields instead of null
-  defp amap_string(v) when is_binary(v) and v != "", do: v
-  defp amap_string(_), do: nil
-
   defp into_address_amap(%{"status" => _s, "info" => info, "infocode" => code}) do
     {:error, {:amap_api_failure, info, code}}
   end
 
   defp into_address_amap(_unexpected), do: {:error, :invalid_response_format}
+
+  # Amap API returns [] for missing string fields instead of null
+  defp amap_string(v) when is_binary(v) and v != "", do: v
+  defp amap_string(_), do: nil
 
   defp into_address_google(%{"results" => []}) do
     {:error, :no_results}
@@ -448,44 +480,61 @@ defmodule TeslaMate.Locations.Geocoder do
   defp into_address_google(%{"results" => [first_result | _]} = response) do
     lat = get_in(first_result, ["geometry", "location", "lat"]) || 0.0
     lon = get_in(first_result, ["geometry", "location", "lng"]) || 0.0
-    
+
     # 从地址组件中提取各个部分
     components = first_result["address_components"] || []
-    
+
     # 辅助函数：根据类型获取地址组件
     get_component = fn types_to_find ->
       Enum.find_value(components, fn component ->
         types = component["types"] || []
+
         if Enum.any?(types_to_find, &(&1 in types)) do
           component["long_name"]
         end
       end)
     end
-    
+
     # 获取各个地址组件
     house_number = get_component.(["street_number"])
     road = get_component.(["route"])
-    neighbourhood = get_component.(["neighborhood", "sublocality", "sublocality_level_1", "sublocality_level_2", "sublocality_level_3", "sublocality_level_4"])
+
+    neighbourhood =
+      get_component.([
+        "neighborhood",
+        "sublocality",
+        "sublocality_level_1",
+        "sublocality_level_2",
+        "sublocality_level_3",
+        "sublocality_level_4"
+      ])
+
     city = get_component.(["locality", "administrative_area_level_2"])
     county = get_component.(["administrative_area_level_2", "administrative_area_level_3"])
     state = get_component.(["administrative_area_level_1"])
     country = get_component.(["country"])
     postcode = get_component.(["postal_code"])
-    
+
     # 获取地点名称 - 从 address_descriptor.landmarks.display_name.text 中获取
     # 优先选择距离最近的地标（straight_line_distance_meters 最小）
-    name = case response["address_descriptor"] do
-      %{"landmarks" => []} -> nil
-      %{"landmarks" => landmarks} ->
-        # 按距离排序，选择最近的地标
-        sorted_landmarks = Enum.sort_by(landmarks, fn landmark ->
-          get_in(landmark, ["straight_line_distance_meters"]) || Float.infinity()
-        end)
-        
-        get_in(hd(sorted_landmarks), ["display_name", "text"])
-      _ -> nil
-    end
-    
+    name =
+      case response["address_descriptor"] do
+        %{"landmarks" => []} ->
+          nil
+
+        %{"landmarks" => landmarks} ->
+          # 按距离排序，选择最近的地标
+          sorted_landmarks =
+            Enum.sort_by(landmarks, fn landmark ->
+              get_in(landmark, ["straight_line_distance_meters"]) || 1.0e308
+            end)
+
+          get_in(hd(sorted_landmarks), ["display_name", "text"])
+
+        _ ->
+          nil
+      end
+
     %{
       display_name: first_result["formatted_address"] || "Unknown",
       osm_id: hash_coordinate(lat, lon),

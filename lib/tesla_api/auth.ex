@@ -5,6 +5,7 @@ defmodule TeslaApi.Auth do
 
   @web_client_id "ownerapi"
   @redirect_uri "https://auth.tesla.com/void/callback"
+  @http_debug System.get_env("TESLA_API_HTTP_DEBUG") == "true"
 
   def web_client_id, do: @web_client_id
   def redirect_uri, do: @redirect_uri
@@ -21,11 +22,12 @@ defmodule TeslaApi.Auth do
   plug Tesla.Middleware.BaseUrl, System.get_env("TESLA_AUTH_HOST", "https://auth.tesla.com")
   plug Tesla.Middleware.Headers, @default_headers
   plug Tesla.Middleware.JSON
-  plug Tesla.Middleware.Logger, debug: true, log_level: &log_level/1
+  plug Tesla.Middleware.Logger, debug: @http_debug, log_level: &log_level/1
 
   defstruct [:token, :type, :expires_in, :refresh_token, :created_at]
 
   defdelegate refresh(auth), to: __MODULE__.Refresh
+  defdelegate exchange_code(code, opts \\ []), to: __MODULE__.CodeExchange
 
   def issuer_url(%__MODULE__{token: access_token}) do
     case derive_issuer_url_from_oat(access_token) do
