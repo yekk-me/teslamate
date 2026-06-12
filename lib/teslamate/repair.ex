@@ -9,29 +9,39 @@ defmodule TeslaMate.Repair do
   alias TeslaMate.{Repo, Locations}
 
   defmodule State do
-    defstruct [:limit]
+    defstruct [:limit, :fuse_name]
   end
 
   # API
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
-  def trigger_run do
-    GenServer.cast(__MODULE__, :repair)
+  def trigger_run(name \\ __MODULE__) do
+    GenServer.cast(name, :repair)
   end
 
   @impl true
   def init(opts) do
+    tenant_id = Keyword.get(opts, :tenant_id)
+
+    if is_binary(tenant_id) do
+      TeslaMate.MultiTenant.TenantContext.put(tenant_id)
+    end
+
     {:ok, _ref} =
       opts
       |> Keyword.get_lazy(:interval, fn -> :timer.hours(1) end)
       |> :timer.send_interval(self(), :repair)
 
-    :ok = trigger_run()
+    :ok = GenServer.cast(self(), :repair)
 
-    {:ok, %State{limit: Keyword.get(opts, :limit, 5000)}}
+    {:ok,
+     %State{
+       limit: Keyword.get(opts, :limit, 5000),
+       fuse_name: Keyword.get(opts, :fuse_name, fuse_name(tenant_id))
+     }}
   end
 
   ## Repair
@@ -56,7 +66,7 @@ defmodule TeslaMate.Repair do
       limit: ^limit
     )
     |> Repo.all()
-    |> repair()
+    |> repair(state)
 
     from(c in ChargingProcess,
       join: p in assoc(c, :position),
@@ -67,14 +77,14 @@ defmodule TeslaMate.Repair do
       limit: ^limit
     )
     |> Repo.all()
-    |> repair()
+    |> repair(state)
 
     {:noreply, state}
   end
 
   @impl true
   def handle_info(:repair, state) do
-    :ok = trigger_run()
+    :ok = GenServer.cast(self(), :repair)
     {:noreply, state}
   end
 
@@ -85,17 +95,17 @@ defmodule TeslaMate.Repair do
 
   # Private
 
-  defp repair([]), do: :ok
+  defp repair([], %State{}), do: :ok
 
-  defp repair([entity | rest]) do
+  defp repair([entity | rest], %State{fuse_name: fuse_name} = state) do
     case entity do
       %Drive{} = drive ->
         Logger.info("Repairing drive ##{drive.id} ...")
 
         drive
         |> Drive.changeset(%{
-          start_address_id: get_address_id(drive.start_position),
-          end_address_id: get_address_id(drive.end_position)
+          start_address_id: get_address_id(drive.start_position, fuse_name),
+          end_address_id: get_address_id(drive.end_position, fuse_name)
         })
         |> Repo.update()
 
@@ -103,7 +113,7 @@ defmodule TeslaMate.Repair do
         Logger.info("Repairing charging process ##{charge.id} ...")
 
         charge
-        |> ChargingProcess.changeset(%{address_id: get_address_id(charge.position)})
+        |> ChargingProcess.changeset(%{address_id: get_address_id(charge.position, fuse_name)})
         |> Repo.update()
     end
     |> case do
@@ -111,13 +121,13 @@ defmodule TeslaMate.Repair do
       {:ok, _entity} -> Logger.info("OK")
     end
 
-    repair(rest)
+    repair(rest, state)
   end
 
-  defp get_address_id(nil), do: nil
+  defp get_address_id(nil, _fuse_name), do: nil
 
-  defp get_address_id(%Position{} = position) do
-    case :fuse.ask(:addr_fuse, :sync) do
+  defp get_address_id(%Position{} = position, fuse_name) do
+    case :fuse.ask(fuse_name, :sync) do
       :ok ->
         Process.sleep(1500)
 
@@ -127,7 +137,7 @@ defmodule TeslaMate.Repair do
             nil
 
           {:error, reason} ->
-            :fuse.melt(:addr_fuse)
+            :fuse.melt(fuse_name)
             Logger.warning("Address not found: #{inspect(reason)}")
             nil
 
@@ -139,14 +149,17 @@ defmodule TeslaMate.Repair do
         nil
 
       {:error, :not_found} ->
-        Logger.debug("Installing circuit-breaker :addr_fuse ...")
+        Logger.debug("Installing circuit-breaker #{inspect(fuse_name)} ...")
 
         :fuse.install(
-          :addr_fuse,
+          fuse_name,
           {{:standard, 5, :timer.minutes(3)}, {:reset, :timer.minutes(15)}}
         )
 
-        get_address_id(position)
+        get_address_id(position, fuse_name)
     end
   end
+
+  defp fuse_name(nil), do: :addr_fuse
+  defp fuse_name(tenant_id), do: :"addr_fuse_#{:erlang.phash2(tenant_id)}"
 end

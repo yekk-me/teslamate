@@ -39,6 +39,12 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
   def api_name(tenant_id),
     do: {:via, Registry, {TeslaMate.MultiTenant.Registry, {:api, tenant_id}}}
 
+  def repair_name(tenant_id),
+    do: {:via, Registry, {TeslaMate.MultiTenant.Registry, {:repair, tenant_id}}}
+
+  def terrain_name(tenant_id),
+    do: {:via, Registry, {TeslaMate.MultiTenant.Registry, {:terrain, tenant_id}}}
+
   def vehicle_supervisor_name(tenant_id),
     do: {:via, Registry, {TeslaMate.MultiTenant.Registry, {:vehicle_supervisor, tenant_id}}}
 
@@ -56,6 +62,8 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
     tenant = Keyword.fetch!(opts, :tenant)
     start_repo? = Keyword.get(opts, :start_repo?, true)
     start_vehicle_workers? = Keyword.get(opts, :start_vehicle_workers?, true)
+    start_repair? = Keyword.get(opts, :start_repair?, true)
+    start_terrain? = Keyword.get(opts, :start_terrain?, true)
 
     children =
       [
@@ -63,6 +71,8 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
         {TeslaMate.MultiTenant.TrafficLimiter, tenant: tenant},
         repo_child(tenant, start_repo?),
         api_child(tenant, start_repo?),
+        repair_child(tenant, start_repo? and start_repair?),
+        terrain_child(tenant, start_repo? and start_terrain?),
         vehicle_supervisor_child(tenant, start_vehicle_workers?),
         mqtt_child(tenant, start_vehicle_workers? and TeslaMate.MultiTenant.start_mqtt?())
       ]
@@ -99,6 +109,40 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
   end
 
   defp api_child(_tenant, _start_repo?), do: nil
+
+  defp repair_child(%Tenant{id: tenant_id}, true) do
+    %{
+      id: {:repair, tenant_id},
+      start:
+        {TeslaMate.Repair, :start_link,
+         [
+           [
+             name: repair_name(tenant_id),
+             tenant_id: tenant_id,
+             limit: TeslaMate.MultiTenant.tenant_repair_limit()
+           ]
+         ]}
+    }
+  end
+
+  defp repair_child(_tenant, _start_repair?), do: nil
+
+  defp terrain_child(%Tenant{id: tenant_id}, true) do
+    %{
+      id: {:terrain, tenant_id},
+      start:
+        {TeslaMate.Terrain, :start_link,
+         [
+           [
+             name: terrain_name(tenant_id),
+             tenant_id: tenant_id,
+             fuse_name: terrain_fuse_name(tenant_id)
+           ]
+         ]}
+    }
+  end
+
+  defp terrain_child(_tenant, _start_terrain?), do: nil
 
   defp vehicle_supervisor_child(%Tenant{} = tenant, true) do
     %{
@@ -156,4 +200,6 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
       type: :supervisor
     }
   end
+
+  defp terrain_fuse_name(tenant_id), do: :"#{TeslaMate.Terrain}_#{:erlang.phash2(tenant_id)}"
 end

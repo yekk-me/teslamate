@@ -24,6 +24,10 @@ defmodule TeslaMate.TerrainTest do
   end
 
   describe "get_elevation/1" do
+    test "returns nil when no terrain process is running" do
+      assert Terrain.get_elevation({0, 0}) == nil
+    end
+
     test "return the elevation", %{test: name} do
       :ok = start_terrain(name, %{{0, 0} => fn -> {:ok, 42} end})
 

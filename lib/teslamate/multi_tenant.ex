@@ -77,6 +77,20 @@ defmodule TeslaMate.MultiTenant do
     end
   end
 
+  def start_repair? do
+    case System.get_env("TESLAMATE_TENANT_START_REPAIR") do
+      nil -> Keyword.get(app_config(), :start_repair?, true)
+      value -> truthy?(value)
+    end
+  end
+
+  def start_terrain? do
+    case System.get_env("TESLAMATE_TENANT_START_TERRAIN") do
+      nil -> Keyword.get(app_config(), :start_terrain?, true)
+      value -> truthy?(value)
+    end
+  end
+
   def start_web? do
     case System.get_env("TESLAMATE_TENANT_START_WEB") do
       nil -> Keyword.get(app_config(), :start_web?, false)
@@ -105,6 +119,13 @@ defmodule TeslaMate.MultiTenant do
   def tenant_repo_pool_size do
     case System.get_env("TESLAMATE_TENANT_REPO_POOL_SIZE") do
       nil -> Keyword.get(app_config(), :tenant_repo_pool_size, 1)
+      value -> String.to_integer(value)
+    end
+  end
+
+  def tenant_repair_limit do
+    case System.get_env("TESLAMATE_TENANT_REPAIR_LIMIT") do
+      nil -> Keyword.get(app_config(), :tenant_repair_limit, 250)
       value -> String.to_integer(value)
     end
   end

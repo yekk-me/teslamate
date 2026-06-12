@@ -3,6 +3,7 @@ defmodule TeslaMate.MultiTenant.RuntimeSupervisorTest do
 
   alias TeslaMate.MultiTenant.RuntimeSupervisor
   alias TeslaMate.MultiTenant.Tenant
+  alias TeslaMate.MultiTenant.TenantSupervisor
   alias TeslaMate.MultiTenant.TrafficLimiter
   alias TeslaMate.MultiTenant.VehicleWorker
 
@@ -51,8 +52,53 @@ defmodule TeslaMate.MultiTenant.RuntimeSupervisorTest do
   test "tenant runtimes are reconciler-managed temporary children" do
     tenant = tenant("runtime-temporary", [])
 
-    assert %{restart: :temporary} =
-             TeslaMate.MultiTenant.TenantSupervisor.child_spec(tenant: tenant)
+    assert %{restart: :temporary} = TenantSupervisor.child_spec(tenant: tenant)
+  end
+
+  test "tenant runtime includes tenant-scoped maintenance workers when repo starts" do
+    tenant = tenant("runtime-maintenance", [])
+
+    assert {:ok, {_flags, children}} =
+             TenantSupervisor.init(
+               tenant: tenant,
+               start_repo?: true,
+               start_vehicle_workers?: false,
+               start_repair?: true,
+               start_terrain?: true
+             )
+
+    assert Enum.any?(children, fn
+             %{id: {:repair, "runtime-maintenance"}} -> true
+             _child -> false
+           end)
+
+    assert Enum.any?(children, fn
+             %{id: {:terrain, "runtime-maintenance"}} -> true
+             _child -> false
+           end)
+  end
+
+  test "tenant runtime can disable maintenance workers independently" do
+    tenant = tenant("runtime-maintenance-disabled", [])
+
+    assert {:ok, {_flags, children}} =
+             TenantSupervisor.init(
+               tenant: tenant,
+               start_repo?: true,
+               start_vehicle_workers?: false,
+               start_repair?: false,
+               start_terrain?: false
+             )
+
+    refute Enum.any?(children, fn
+             %{id: {:repair, "runtime-maintenance-disabled"}} -> true
+             _child -> false
+           end)
+
+    refute Enum.any?(children, fn
+             %{id: {:terrain, "runtime-maintenance-disabled"}} -> true
+             _child -> false
+           end)
   end
 
   test "stops tenant runtime when assignment disappears", %{supervisor: supervisor} do

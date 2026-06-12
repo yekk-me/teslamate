@@ -6,7 +6,7 @@ defmodule TeslaMate.Terrain do
   alias TeslaMate.Log.Position
   alias TeslaMate.Log
 
-  defstruct [:timeout, :deps, :name]
+  defstruct [:timeout, :deps, :name, :fuse_name]
   alias __MODULE__, as: Data
 
   @name __MODULE__
@@ -17,17 +17,31 @@ defmodule TeslaMate.Terrain do
     GenStateMachine.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, @name))
   end
 
-  def get_elevation(name \\ @name, coordinates) do
+  def get_elevation(coordinates) do
+    get_elevation(default_name(), coordinates)
+  end
+
+  def get_elevation(name, coordinates) do
     GenStateMachine.call(name, {:get_elevation, coordinates}, 2000)
+  catch
+    :exit, {:noproc, _} -> nil
   end
 
   # Callbacks
 
   @impl true
   def init(opts) do
+    tenant_id = Keyword.get(opts, :tenant_id)
+    name = Keyword.get(opts, :name, @name)
+
+    if is_binary(tenant_id) do
+      TeslaMate.MultiTenant.TenantContext.put(tenant_id)
+    end
+
     data = %Data{
       timeout: Keyword.get(opts, :timeout, 100),
-      name: Keyword.get(opts, :name, @name),
+      name: name,
+      fuse_name: Keyword.get(opts, :fuse_name, fuse_name(tenant_id, name)),
       deps: %{
         srtm: Keyword.get(opts, :deps_srtm, SRTM),
         log: Keyword.get(opts, :deps_log, Log)
@@ -166,12 +180,12 @@ defmodule TeslaMate.Terrain do
 
   # Private
 
-  defp do_get_elevation({lat, lng}, %Data{deps: %{srtm: srtm}, name: name} = data) do
-    case :fuse.ask(name, :sync) do
+  defp do_get_elevation({lat, lng}, %Data{deps: %{srtm: srtm}, fuse_name: fuse_name} = data) do
+    case :fuse.ask(fuse_name, :sync) do
       :ok ->
         with {:error, reason} <-
                call(srtm, :get_elevation, [lat, lng, [disk_cache_path: cache_path()]]) do
-          :fuse.melt(name)
+          :fuse.melt(fuse_name)
           {:error, reason}
         end
 
@@ -179,11 +193,26 @@ defmodule TeslaMate.Terrain do
         {:error, :unavailable}
 
       {:error, :not_found} ->
-        Logger.debug("Installing circuit-breaker #{inspect(name)} ...")
-        :fuse.install(name, {{:standard, 2, :timer.minutes(3)}, {:reset, :timer.minutes(15)}})
+        Logger.debug("Installing circuit-breaker #{inspect(fuse_name)} ...")
+
+        :fuse.install(
+          fuse_name,
+          {{:standard, 2, :timer.minutes(3)}, {:reset, :timer.minutes(15)}}
+        )
+
         do_get_elevation({lat, lng}, data)
     end
   end
+
+  defp default_name do
+    case TeslaMate.MultiTenant.TenantContext.tenant_id() do
+      nil -> @name
+      tenant_id -> TeslaMate.MultiTenant.TenantSupervisor.terrain_name(tenant_id)
+    end
+  end
+
+  defp fuse_name(nil, name), do: name
+  defp fuse_name(tenant_id, _name), do: :"#{__MODULE__}_#{:erlang.phash2(tenant_id)}"
 
   defp schedule_fetch do
     {:state_timeout, :timer.hours(6), {:fetch_positions, 0}}

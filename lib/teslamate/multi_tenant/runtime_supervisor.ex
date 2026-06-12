@@ -71,7 +71,9 @@ defmodule TeslaMate.MultiTenant.RuntimeSupervisor do
       {TenantSupervisor,
        tenant: tenant,
        start_repo?: TeslaMate.MultiTenant.start_repo?(),
-       start_vehicle_workers?: TeslaMate.MultiTenant.start_vehicle_workers?()}
+       start_vehicle_workers?: TeslaMate.MultiTenant.start_vehicle_workers?(),
+       start_repair?: TeslaMate.MultiTenant.start_repair?(),
+       start_terrain?: TeslaMate.MultiTenant.start_terrain?()}
 
     case DynamicSupervisor.start_child(supervisor, spec) do
       {:ok, _pid} -> :ok
