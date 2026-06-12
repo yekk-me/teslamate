@@ -152,6 +152,7 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
     %{
       id: {:tenant, tenant.id},
       start: {__MODULE__, :start_link, [opts]},
+      restart: :temporary,
       type: :supervisor
     }
   end

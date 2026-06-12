@@ -48,6 +48,13 @@ defmodule TeslaMate.MultiTenant.RuntimeSupervisorTest do
            } = VehicleWorker.summary(worker_pid)
   end
 
+  test "tenant runtimes are reconciler-managed temporary children" do
+    tenant = tenant("runtime-temporary", [])
+
+    assert %{restart: :temporary} =
+             TeslaMate.MultiTenant.TenantSupervisor.child_spec(tenant: tenant)
+  end
+
   test "stops tenant runtime when assignment disappears", %{supervisor: supervisor} do
     tenant_a = tenant("runtime-stop-a", ["car-1"])
     tenant_b = tenant("runtime-stop-b", ["car-2"])

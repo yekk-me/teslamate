@@ -1,0 +1,67 @@
+ARG TESLAMATE_BUILDER_IMAGE=elixir:1.18.4-otp-26
+ARG TESLAMATE_BASE_IMAGE=mytesla/teslamate:v2.2
+
+FROM --platform=$BUILDPLATFORM ${TESLAMATE_BUILDER_IMAGE} AS builder
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ENV HEX_MIRROR="https://hexpm.upyun.com" \
+    HEX_CDN="https://hexpm.upyun.com"
+
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*
+
+RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+
+RUN apt-get update \
+    && apt-get install -y ca-certificates curl gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+     | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && NODE_MAJOR=22 \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" \
+    | tee /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update \
+    && apt-get install nodejs -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mix local.rebar --force && \
+    mix local.hex --force
+
+ENV MIX_ENV=prod
+WORKDIR /opt/app
+
+COPY mix.exs mix.lock ./
+RUN mix deps.get --only $MIX_ENV
+
+COPY config/$MIX_ENV.exs config/$MIX_ENV.exs
+COPY config/config.exs config/config.exs
+RUN mix deps.compile
+
+COPY assets/package.json assets/package-lock.json ./assets/
+RUN npm ci --prefix ./assets --progress=false --no-audit --loglevel=error
+
+COPY assets assets
+COPY priv/static priv/static
+RUN mix assets.deploy
+
+COPY lib lib
+COPY priv/repo/migrations priv/repo/migrations
+COPY priv/gettext priv/gettext
+COPY grafana/dashboards grafana/dashboards
+COPY VERSION VERSION
+RUN mix compile
+
+COPY config/runtime.exs config/runtime.exs
+RUN SKIP_LOCALE_DOWNLOAD=true mix release --path /opt/built
+RUN test -f /opt/built/lib/teslamate-2.2.0/ebin/Elixir.TeslaMate.MultiTenant.beam \
+    && test -f /opt/built/releases/2.2.0/start.boot
+
+FROM --platform=$TARGETPLATFORM ${TESLAMATE_BASE_IMAGE}
+
+ENV RELEASE_MODE=interactive
+
+COPY --from=builder --chown=10000:10001 /opt/built/lib/teslamate-2.2.0 /opt/app/lib/teslamate-2.2.0
+COPY --from=builder --chown=10000:10001 /opt/built/releases/2.2.0/runtime.exs /opt/app/releases/2.2.0/runtime.exs
