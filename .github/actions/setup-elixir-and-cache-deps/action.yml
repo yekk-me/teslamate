@@ -4,11 +4,11 @@ inputs:
   elixir-version:
     description: "Elixir version"
     required: false
-    default: "1.18.4"
+    default: "1.19.5"
   otp-version:
     description: "OTP version"
     required: false
-    default: "26"
+    default: "28"
   cache-name-deps:
     description: "Cache name for dependencies"
     required: true
