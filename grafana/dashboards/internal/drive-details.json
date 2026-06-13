@@ -542,9 +542,12 @@
       "maxDataPoints": 50000,
       "options": {
         "basemap": {
-          "config": {},
+          "config": {
+            "attribution": "Open street map",
+            "url": "https://osm-proxy.mytesla.cc/{z}/{x}/{y}.png"
+          },
           "name": "Layer 0",
-          "type": "osm-standard"
+          "type": "xyz"
         },
         "controls": {
           "mouseWheelZoom": true,

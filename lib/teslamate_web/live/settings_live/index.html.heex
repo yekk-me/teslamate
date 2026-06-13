@@ -371,17 +371,6 @@
     <table class="about table is-narrow">
       <tbody>
         <tr>
-          <th align="right"><%= gettext("Version") %></th>
-          <td>
-            <%= Application.spec(:teslamate, :vsn) %><strong><%= if @update do
-                  vsn = link @update, to: "https://github.com/teslamate-org/teslamate/releases",
-                                      target: "_blank", rel: "noopener noreferrer"
-
-                  [" (", gettext("Update available"), ": ", vsn, ")"]
-                end %></strong>
-          </td>
-        </tr>
-        <tr>
           <th align="right"><%= gettext("GitHub") %></th>
           <td>
             <%= link("teslamate-org/teslamate",
@@ -392,10 +381,10 @@
           </td>
         </tr>
         <tr>
-          <th align="right"><%= gettext("Documentation") %></th>
+          <th align="right"><%= "咨询" %></th>
           <td>
-            <%= link("docs.teslamate.org",
-              to: "https://docs.teslamate.org",
+            <%= link("yekk",
+              to: "https://yekk.me/me",
               target: "_blank",
               rel: "noopener noreferrer"
             ) %>
