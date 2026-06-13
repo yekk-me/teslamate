@@ -4,7 +4,7 @@ defmodule TeslaMate.Api do
   require Logger
 
   alias TeslaMate.Auth.Tokens
-  alias TeslaMate.{Vehicles, Convert}
+  alias TeslaMate.{Vehicles, Convert, Mqtt}
   alias TeslaApi.Auth
 
   alias Finch.Response
@@ -149,6 +149,7 @@ defmodule TeslaMate.Api do
         true = insert_auth(state.name, auth)
         :ok = call(state.deps.auth, :save, [auth])
         :ok = call(state.deps.vehicles, :restart)
+        :ok = Mqtt.restart_pubsub()
         {:ok, state} = schedule_refresh(auth, state)
         :ok = :fuse.reset(fuse_name(state.name))
 

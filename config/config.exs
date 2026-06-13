@@ -28,7 +28,7 @@ config :phoenix,
     PhoenixBakery.Zstd
   ]
 
-config :gettext, :default_locale, "en"
+config :gettext, :default_locale, "zh_Hans"
 
 config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
 

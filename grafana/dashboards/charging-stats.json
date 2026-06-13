@@ -1244,10 +1244,12 @@
       "maxDataPoints": 1,
       "options": {
         "basemap": {
-          "config": {},
+          "config": {
+            "attribution": "Open street map",
+            "url": "https://osm-proxy.mytesla.cc/{z}/{x}/{y}.png"
+          },
           "name": "Layer 0",
-          "tooltip": true,
-          "type": "osm-standard"
+          "type": "xyz"
         },
         "controls": {
           "mouseWheelZoom": true,

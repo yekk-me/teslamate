@@ -71,3 +71,5 @@ config/*.env
 
 # Used during tests
 /tmp/
+
+.claude/
