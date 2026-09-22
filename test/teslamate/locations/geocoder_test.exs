@@ -231,4 +231,3 @@ defmodule TeslaMate.Locations.GeocoderTest do
     end
   end
 end
-

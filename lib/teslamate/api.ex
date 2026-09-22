@@ -186,7 +186,11 @@ defmodule TeslaMate.Api do
 
   @impl true
   def handle_call({:sign_in, [%Tokens{} = tokens]}, _, %State{} = state) do
-    Auth.refresh(%Auth{token: tokens.access, refresh_token: tokens.refresh, provider: tokens.provider})
+    Auth.refresh(%Auth{
+      token: tokens.access,
+      refresh_token: tokens.refresh,
+      provider: tokens.provider
+    })
     |> case do
       {:ok, %Auth{} = auth} ->
         :ok = call(state.deps.auth, :save, [auth])

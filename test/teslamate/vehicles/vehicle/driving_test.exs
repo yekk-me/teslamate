@@ -548,4 +548,3 @@ defmodule TeslaMate.Vehicles.Vehicle.DrivingTest do
     end
   end
 end
-

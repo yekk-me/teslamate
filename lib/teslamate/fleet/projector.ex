@@ -6,6 +6,7 @@ defmodule TeslaMate.Fleet.Projector do
   alias TeslaMate.Vehicles.Vehicle
 
   @saved_fields [
+    :car,
     :last_used,
     :last_response,
     :last_state_change,
@@ -18,7 +19,8 @@ defmodule TeslaMate.Fleet.Projector do
     case Repo.get(Checkpoint, base.car.id) do
       %Checkpoint{version: 1, logger_state: binary} when is_binary(binary) ->
         {state, saved} = :erlang.binary_to_term(binary, [:safe])
-        {state, struct(base, saved)}
+        restored = struct(base, saved)
+        {state, %{restored | car: %{restored.car | settings: base.car.settings}}}
 
       nil ->
         {:start, base}
@@ -93,6 +95,13 @@ defmodule TeslaMate.Fleet.Projector do
               },
               else: vehicle
 
+          vehicle = if event.source == "telemetry" do
+            Enum.reduce([:drive_state, :charge_state, :climate_state, :vehicle_state], vehicle, fn group, v ->
+              Map.update!(v, group, &Map.put(&1, :timestamp, event.recorded_at))
+            end)
+          else
+            vehicle
+          end
           data = %{data | last_response: vehicle, last_used: event.recorded_at}
 
           kind =

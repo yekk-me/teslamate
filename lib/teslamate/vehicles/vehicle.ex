@@ -1768,6 +1768,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
   defp date_opts(%Vehicle{drive_state: %Drive{timestamp: ts}}), do: [date: parse_timestamp(ts)]
   defp date_opts(%Vehicle{}), do: []
 
+  defp parse_timestamp(%DateTime{} = at), do: at
   defp parse_timestamp(ts), do: DateTime.from_unix!(ts, :millisecond)
 
   defp schedule_fetch(%Data{} = data), do: schedule_fetch(10, :seconds, data)

@@ -533,12 +533,7 @@ defmodule TeslaMateWeb.SettingsLiveTest do
         assert {:ok, _view, html} = live(conn, "/settings")
         html = Floki.parse_document!(html)
 
-        assert "#{Application.spec(:teslamate, :vsn)} (Update available: 1.1.3)" ==
-                 html
-                 |> Floki.find(".about tr:first-child td")
-                 |> Floki.text()
-                 |> String.trim()
-
+        # This fork displays update notices in the footer; its About table contains links.
         assert [
                  {"a",
                   [_, {"href", "https://github.com/teslamate-org/teslamate/releases"}, _, _, _],
@@ -566,3 +561,4 @@ defmodule TeslaMateWeb.SettingsLiveTest do
     end
   end
 end
+

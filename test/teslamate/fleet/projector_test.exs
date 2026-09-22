@@ -54,7 +54,8 @@ defmodule TeslaMate.Fleet.ProjectorTest do
 
     for r <- [r2, r1, r3], do: assert({:ok, :stored} = Ingest.store(car, "telemetry", r))
     assert {:ok, {"projected", {:driving, :available, drive}, _}} = step(base)
-    assert {{:driving, :available, restored}, _} = Projector.restore(base)
+    assert {{:driving, :available, restored}, restored_data} = Projector.restore(base)
+    assert restored_data.car.model == "3"
     assert restored.id == drive.id
     assert drive.start_date == ~U[2026-01-01 00:00:01.000000Z]
     assert {:ok, {"projected", {:driving, :available, _}, _}} = step(base)
@@ -67,6 +68,53 @@ defmodule TeslaMate.Fleet.ProjectorTest do
     assert {:ok, :duplicate} = Ingest.store(car, "telemetry", Map.put(r3, "isResend", true))
     assert {:ok, :empty} = step(base)
     assert Repo.aggregate(Log.Position, :count) == count
+  end
+
+  test "equivalent REST samples and telemetry produce identical drive and position metrics", %{car: car, base: base} do
+    {:ok, reference} = Log.create_car(%{eid: 9101, vid: 9102, vin: "LRW00000000000002"})
+    reference_base = %{base | car: reference}
+    samples = [{0, "P", 0, 10000.123456, 200.0}, {1, "D", 30, 10000.123456, 200.0},
+      {61, "D", 30, 10001.123456, 199.0}, {121, "P", 0, 10002.123456, 198.0}]
+    for {sec, gear, speed, odometer, range} <- samples do
+      rest = snapshot(reference, sec)
+        |> put_in(["drive_state", "shift_state"], gear)
+        |> put_in(["drive_state", "speed"], speed)
+        |> put_in(["vehicle_state", "odometer"], odometer)
+        |> put_in(["charge_state", "ideal_battery_range"], range)
+        |> put_in(["charge_state", "battery_range"], range - 10)
+      assert {:ok, :stored} = Ingest.store(reference, "snapshot", rest)
+      assert {:ok, {"projected", _, _}} = step(reference_base)
+      if sec == 0 do
+        Ingest.store(car, "snapshot", snapshot(car))
+      else
+        Ingest.store(car, "telemetry", record(car, sec, %{"Gear" => "ShiftState" <> gear,
+          "VehicleSpeed" => speed, "Odometer" => odometer,
+          "IdealBatteryRange" => range, "RatedRange" => range - 10}))
+      end
+      assert {:ok, {"projected", _, _}} = step(base)
+    end
+    keys = [:start_date, :end_date, :distance, :duration_min, :speed_max, :speed_avg,
+      :start_ideal_range_km, :end_ideal_range_km, :start_rated_range_km, :end_rated_range_km]
+    actual = Repo.one!(from d in Log.Drive, where: d.car_id == ^car.id)
+    expected = Repo.one!(from d in Log.Drive, where: d.car_id == ^reference.id)
+    assert Map.take(actual, keys) == Map.take(expected, keys)
+    position_keys = [:date, :latitude, :longitude, :speed, :odometer, :battery_level,
+      :usable_battery_level, :ideal_battery_range_km, :rated_battery_range_km, :outside_temp]
+    positions = fn car_id ->
+      Repo.all(from p in Log.Position, where: p.car_id == ^car_id, order_by: [p.date, p.id])
+      |> Enum.map(&Map.take(&1, position_keys))
+    end
+    assert positions.(car.id) == positions.(reference.id)
+  end
+
+  test "vehicle microseconds survive projection into legacy position dates", %{car: car, base: base} do
+    Ingest.store(car, "snapshot", snapshot(car))
+    step(base)
+    at = ~U[2026-01-01 00:00:01.123456Z]
+    r = record(car, 1, %{"Gear" => "ShiftStateD"}) |> Map.put("createdAt", DateTime.to_iso8601(at))
+    Ingest.store(car, "telemetry", r)
+    assert {:ok, {"projected", {:driving, :available, drive}, _}} = step(base)
+    assert Repo.one!(from p in Log.Position, where: p.drive_id == ^drive.id).date == at
   end
 
   test "AC charge completion keeps battery energy and the original calculation", %{

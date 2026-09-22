@@ -74,6 +74,8 @@ defmodule TeslaMate.Fleet.Decoder do
         nil -> nil
       end
 
+    power = cast(power, :number)
+
     snapshot =
       cond do
         is_number(power) ->
@@ -185,6 +187,8 @@ defmodule TeslaMate.Fleet.Decoder do
 
     put_in(s, ["charge_state", "charging_state"], state)
   end
+
+  defp special(s, "CarType", "CarTypeUnknown"), do: put_in(s, ["vehicle_config", "car_type"], nil)
 
   defp special(s, "CarType", "CarType" <> type),
     do: put_in(s, ["vehicle_config", "car_type"], String.downcase(type))

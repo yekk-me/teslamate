@@ -68,6 +68,7 @@ defmodule TeslaMate.Fleet.Ingest do
 
   defp persist(car, source, at, payload, identity) do
     at = DateTime.from_unix!(DateTime.to_unix(at, :microsecond), :microsecond)
+
     key =
       :crypto.hash(:sha256, :erlang.term_to_binary({source, canonical(identity)}))
       |> Base.encode16(case: :lower)
@@ -85,7 +86,10 @@ defmodule TeslaMate.Fleet.Ingest do
             payload: payload,
             status: "pending"
           }
-        ], on_conflict: :nothing, conflict_target: [:car_id, :event_key])
+        ],
+        on_conflict: :nothing,
+        conflict_target: [:car_id, :event_key]
+      )
 
     {:ok, if(count == 1, do: :stored, else: :duplicate)}
   end
