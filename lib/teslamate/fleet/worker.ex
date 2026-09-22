@@ -1,5 +1,5 @@
 defmodule TeslaMate.Fleet.Worker do
-  @moduledoc "Tenant-local, single writer for durable Fleet samples. REST uses the same inbox."
+  @moduledoc "Tenant-local single writer for durable Fleet samples. REST uses the same inbox."
   use GenServer
   require Logger
   alias TeslaMate.Fleet.{Ingest, Projector}
@@ -11,11 +11,11 @@ defmodule TeslaMate.Fleet.Worker do
 
   @impl true
   def init(opts) do
-    {:ok, _, base, _} = Vehicle.init(Keyword.merge(opts, fleet?: true, import?: true))
+    {:ok, _, base, _} = Vehicle.init(Keyword.put(opts, :fleet?, true))
     {state, data} = Projector.restore(base)
     send(self(), :poll)
     send(self(), :drain)
-    {:ok, %{base: base, data: data, state: state, task: nil}}
+    {:ok, %{base: base, data: data, state: state, task: nil, healthy?: false}}
   end
 
   @impl true
@@ -28,12 +28,12 @@ defmodule TeslaMate.Fleet.Worker do
   def handle_info(:drain, s) do
     s = Enum.reduce_while(1..100, s, fn _, s ->
       case Projector.step(s.base) do
-        {:ok, {"projected", state, data}} -> {:cont, %{s | state: state, data: data}}
+        {:ok, {"projected", state, data}} -> {:cont, %{s | state: state, data: data, healthy?: true}}
         {:ok, :empty} -> {:halt, s}
-        {:ok, _} -> {:cont, s}
-        {:error, reason} ->
-          Logger.error("Fleet projection blocked: #{inspect(reason)}")
-          {:halt, s}
+        {:ok, _} -> {:cont, %{s | healthy?: false}}
+        {:error, _} ->
+          Logger.error("Fleet projection blocked; durable inbox retained", car_id: s.base.car.id)
+          {:halt, %{s | healthy?: false}}
       end
     end)
     Phoenix.PubSub.broadcast(TeslaMate.PubSub,
@@ -43,29 +43,45 @@ defmodule TeslaMate.Fleet.Worker do
   end
 
   def handle_info(:poll, %{task: nil} = s) do
-    parent = self()
     api = s.base.deps.api
     vin = s.base.car.vin
     task = TeslaMate.MultiTenant.TenantTask.async(fn ->
-      send(parent, {:fleet_rest_result, Core.Dependency.call(api, :get_vehicle_with_state, [vin])})
+      # The metadata endpoint does not wake a sleeping vehicle. Never send wake_up.
+      try do
+        case Core.Dependency.call(api, :get_vehicle, [vin]) do
+          {:ok, %TeslaApi.Vehicle{state: "online"}} -> Core.Dependency.call(api, :get_vehicle_with_state, [vin])
+          result -> result
+        end
+      rescue
+        _ -> {:error, :fleet_rest_failure}
+      catch
+        :exit, _ -> {:error, :fleet_rest_failure}
+      end
     end)
     {:noreply, %{s | task: task}}
   end
 
-  def handle_info({:fleet_rest_result, {:ok, %TeslaApi.Vehicle{state: "online"} = v}}, s) do
-    payload = to_map(v) |> Map.put("option_codes", Enum.join(v.option_codes || [], ","))
-    Ingest.store(s.base.car, "snapshot", payload)
-    {:noreply, s}
-  end
-  def handle_info({:fleet_rest_result, _}, s), do: {:noreply, s}
-  def handle_info({ref, _}, %{task: %Task{ref: ref}} = s) do
+  def handle_info({ref, result}, %{task: %Task{ref: ref}} = s) do
     Process.demonitor(ref, [:flush])
-    Process.send_after(self(), :poll, poll_interval())
-    {:noreply, %{s | task: nil}}
+    saved = case result do
+      {:ok, %TeslaApi.Vehicle{state: "online"} = v} ->
+        payload = to_map(v) |> Map.put("option_codes", Enum.join(v.option_codes || [], ","))
+        Ingest.store(s.base.car, "snapshot", payload)
+      {:ok, %TeslaApi.Vehicle{state: state}} when state in ~w(asleep offline) ->
+        Ingest.store(s.base.car, "status", %{"vin" => s.base.car.vin, "state" => state,
+          "observed_at" => DateTime.to_iso8601(DateTime.utc_now())})
+      _ -> {:error, :unavailable}
+    end
+    delay = case result do
+      {:error, :too_many_request, seconds} when is_integer(seconds) -> max(poll_interval(), seconds * 1000)
+      _ -> poll_interval()
+    end
+    Process.send_after(self(), :poll, delay)
+    {:noreply, %{s | task: nil, healthy?: s.healthy? and match?({:ok, _}, saved)}}
   end
   def handle_info({:DOWN, ref, :process, _, _}, %{task: %Task{ref: ref}} = s) do
     Process.send_after(self(), :poll, poll_interval())
-    {:noreply, %{s | task: nil}}
+    {:noreply, %{s | task: nil, healthy?: false}}
   end
   def handle_info(%TeslaMate.Settings.CarSettings{} = settings, s) do
     car = %{s.base.car | settings: settings}
@@ -75,7 +91,7 @@ defmodule TeslaMate.Fleet.Worker do
 
   defp poll_interval, do: String.to_integer(System.get_env("TESLA_FLEET_RECONCILE_SECONDS", "300")) |> max(30) |> then(&(&1 * 1000))
   defp summary(s) do
-    Summary.into(s.data.last_response, %{state: s.state, healthy?: true, car: s.data.car,
+    Summary.into(s.data.last_response, %{state: s.state, healthy?: s.healthy?, car: s.data.car,
       since: s.data.last_state_change, elevation: s.data.elevation, geofence: s.data.geofence})
   end
   defp to_map(%{__struct__: _} = v), do: v |> Map.from_struct() |> to_map()

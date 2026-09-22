@@ -6,7 +6,8 @@ defmodule TeslaMate.Fleet.Ingest do
 
   def ingest(tenant_id, %{"vin" => vin} = payload) when is_binary(vin) do
     tenant = TenantState.tenant(tenant_id)
-    assigned? = Enum.any?(Policy.active_vehicles(tenant), &(&1.vin == vin))
+    assigned? = match?(%TeslaMate.MultiTenant.Tenant{}, tenant) and
+      Policy.allowed?(tenant) == :ok and Enum.any?(Policy.active_vehicles(tenant), &(&1.vin == vin))
 
     if assigned? do
       TenantContext.run(tenant_id, fn ->
@@ -18,6 +19,8 @@ defmodule TeslaMate.Fleet.Ingest do
     else
       {:error, :vehicle_not_assigned}
     end
+  rescue
+    _ in [RuntimeError, DBConnection.ConnectionError] -> {:error, :tenant_unavailable}
   catch
     :exit, _ -> {:error, :tenant_unavailable}
   end
@@ -26,9 +29,11 @@ defmodule TeslaMate.Fleet.Ingest do
   def store(car, "telemetry", %{"data" => data} = payload) when is_list(data) and length(data) <= 512 do
     with {:ok, at, _} <- timestamp(payload["createdAt"] || payload["created_at"]),
          true <- DateTime.diff(at, DateTime.utc_now(), :second) <= 300,
-         true <- Enum.all?(data, &valid_datum?/1) do
+         true <- payload["vin"] == car.vin,
+         true <- Enum.all?(data, &valid_datum?/1),
+         true <- length(Enum.uniq_by(data, & &1["key"])) == length(data) do
       # is_resend is a transport flag, not part of sample identity. Key order is canonicalized.
-      identity = payload |> Map.drop(["isResend", "is_resend"])
+      identity = payload |> Map.drop(["isResend", "is_resend"]) |> Map.put("data", Enum.sort_by(data, & &1["key"]))
       persist(car, "telemetry", at, payload, identity)
     else
       _ -> {:error, :invalid_payload}
@@ -40,6 +45,12 @@ defmodule TeslaMate.Fleet.Ingest do
     case DateTime.from_unix(ts, :millisecond) do
       {:ok, at} -> persist(car, "snapshot", at, payload, payload)
       _ -> {:error, :invalid_payload}
+    end
+  end
+  def store(car, "status", %{"state" => state, "observed_at" => time, "vin" => vin} = payload)
+      when state in ~w(asleep offline) and vin == car.vin do
+    with {:ok, at, _} <- timestamp(time) do
+      persist(car, "status", at, payload, payload)
     end
   end
   def store(_, _, _), do: {:error, :invalid_payload}

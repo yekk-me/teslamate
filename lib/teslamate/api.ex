@@ -81,12 +81,7 @@ defmodule TeslaMate.Api do
     end
   end
 
-  def sign_in(name, {email, password}) do
-    case fetch_auth(name) do
-      {:error, :not_signed_in} -> GenServer.call(name, {:sign_in, [email, password]}, @timeout)
-      {:ok, %Auth{}} -> {:error, :already_signed_in}
-    end
-  end
+  def sign_in(_name, {_email, _password}), do: {:error, :fleet_oauth_required}
 
   def sign_out(name \\ @name) do
     GenServer.call(name, :sign_out)
@@ -119,7 +114,7 @@ defmodule TeslaMate.Api do
 
     state =
       case call(deps.auth, :get_tokens) do
-        %Tokens{access: at, refresh: rt, provider: provider} when is_binary(at) and is_binary(rt) ->
+        %Tokens{access: at, refresh: rt, provider: provider} when is_binary(at) and is_binary(rt) and provider == "fleet_cn" ->
           restored_tokens = %Auth{token: at, refresh_token: rt, expires_in: 10 * 60, provider: provider}
 
           {:ok, state} =
@@ -188,8 +183,8 @@ defmodule TeslaMate.Api do
     end
     |> case do
       {:ok, %Auth{} = auth} ->
-        true = insert_auth(state, auth)
         :ok = call(state.deps.auth, :save, [auth])
+        true = insert_auth(state, auth)
         :ok = call(state.deps.vehicles, :restart)
         :ok = restart_mqtt_pubsub(state.tenant_id)
         {:ok, state} = schedule_refresh(auth, state)
@@ -211,8 +206,16 @@ defmodule TeslaMate.Api do
 
         {:reply, {:ok, {:mfa, devices, wrapped_callback}}, state}
 
-      {:error, %TeslaApi.Error{} = e} ->
-        {:reply, {:error, e}, state}
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
+  def handle_cast({:refresh_if_current, token}, state) do
+    case fetch_auth(state) do
+      {:ok, %Auth{token: ^token}} -> handle_info(:refresh_auth, state)
+      _ -> {:noreply, state}
     end
   end
 
@@ -224,8 +227,8 @@ defmodule TeslaMate.Api do
 
         case Auth.refresh(tokens) do
           {:ok, refreshed_tokens} ->
-            true = insert_auth(state, refreshed_tokens)
             :ok = call(state.deps.auth, :save, [refreshed_tokens])
+            true = insert_auth(state, refreshed_tokens)
             {:ok, state} = schedule_refresh(refreshed_tokens, state)
             :ok = :fuse.reset(fuse_name(name))
             {:noreply, state}
@@ -316,7 +319,7 @@ defmodule TeslaMate.Api do
             {:error, :not_signed_in}
 
           :ok ->
-            send(name, :refresh_auth)
+            GenServer.cast(name, {:refresh_if_current, auth.token})
             {:error, :unauthorized}
         end
 
@@ -347,7 +350,7 @@ defmodule TeslaMate.Api do
 
   defp preload_vehicle(%TeslaApi.Vehicle{state: "online", id: id} = vehicle, auth, tenant_id) do
     with :ok <- allow_tesla_api(tenant_id) do
-      case TeslaApi.Vehicle.get_with_state(auth, id) do
+      case TeslaApi.Vehicle.get_with_state(auth, vehicle.vin || id) do
         {:ok, %TeslaApi.Vehicle{} = vehicle} ->
           vehicle
 

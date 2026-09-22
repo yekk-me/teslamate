@@ -234,9 +234,9 @@ defmodule TeslaMate.Log do
 
   ## Drive
 
-  def start_drive(%Car{id: id}) do
+  def start_drive(%Car{id: id}, opts \\ []) do
     %Drive{car_id: id}
-    |> Drive.changeset(%{start_date: DateTime.utc_now()})
+    |> Drive.changeset(%{start_date: Keyword.get(opts, :date, DateTime.utc_now())})
     |> Repo.insert()
   end
 
@@ -430,7 +430,7 @@ defmodule TeslaMate.Log do
 
     with {:ok, cproc} <-
            %ChargingProcess{car_id: id, address_id: address_id, geofence_id: geofence_id}
-           |> ChargingProcess.changeset(%{start_date: DateTime.utc_now(), position: position})
+           |> ChargingProcess.changeset(%{start_date: Keyword.get(opts, :date, DateTime.utc_now()), position: position})
            |> Repo.insert() do
       {:ok, Repo.preload(cproc, [:address, :geofence])}
     end
@@ -709,3 +709,4 @@ defmodule TeslaMate.Log do
     |> Repo.insert()
   end
 end
+

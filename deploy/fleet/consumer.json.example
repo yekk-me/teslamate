@@ -1,0 +1,7 @@
+{
+  "bootstrap.servers": "kafka:9092",
+  "group.id": "teslamate-fleet-inbox",
+  "enable.auto.commit": false,
+  "enable.auto.offset.store": false,
+  "auto.offset.reset": "earliest"
+}

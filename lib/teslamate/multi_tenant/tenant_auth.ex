@@ -115,7 +115,7 @@ defmodule TeslaMate.MultiTenant.TenantAuth do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
-  defp auth_api(opts), do: Keyword.get(opts, :auth_api, if(TeslaApi.Fleet.enabled?(), do: TeslaApi.Fleet, else: TeslaApi.Auth))
+  defp auth_api(opts), do: Keyword.get(opts, :auth_api, TeslaApi.Fleet)
   defp vehicle_api(opts), do: Keyword.get(opts, :vehicle_api, TeslaApi.Vehicle)
 
   defp stringify_keys(map) do

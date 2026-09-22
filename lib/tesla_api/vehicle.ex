@@ -22,14 +22,21 @@ defmodule TeslaApi.Vehicle do
             vehicle_config: nil,
             vehicle_state: nil
 
-  def list(%Auth{} = auth) do
-    endpoint_url =
-      endpoint_url(auth)
+  def list(%Auth{} = auth), do: list_page(auth, 1, [], MapSet.new())
 
-    TeslaApi.get(endpoint_url <> list_path(auth) <> suffix(auth),
-      opts: [access_token: auth.token]
-    )
-    |> handle_response(transform: &list_result/1)
+  defp list_page(auth, page, pages, seen) do
+    response = TeslaApi.get(endpoint_url(auth) <> "/api/1/vehicles",
+      query: [page: page, per_page: 100], opts: [access_token: auth.token])
+      |> handle_response(transform: & &1)
+    with {:ok, rows} when is_list(rows) <- response do
+      ids = Enum.map(rows, &(&1["vin"] || &1["id"]))
+      cond do
+        Enum.any?(ids, &MapSet.member?(seen, &1)) -> {:error, %Error{reason: :invalid_pagination}}
+        length(rows) < 100 -> {:ok, pages |> Enum.reverse() |> List.flatten() |> Kernel.++(list_result(rows))}
+        page >= 1000 -> {:error, %Error{reason: :pagination_limit}}
+        true -> list_page(auth, page + 1, [list_result(rows) | pages], Enum.reduce(ids, seen, &MapSet.put(&2, &1)))
+      end
+    end
   end
 
   def get(%Auth{} = auth, id) do
@@ -58,7 +65,6 @@ defmodule TeslaApi.Vehicle do
   end
 
   defp endpoint_url(_auth), do: TeslaApi.Fleet.api_url()
-  defp list_path(_auth), do: "/api/1/vehicles"
   defp suffix(_auth), do: ""
 
   def list_result(result) do
@@ -118,7 +124,7 @@ defmodule TeslaApi.Vehicle do
               value
           end
 
-        {:error, %Error{reason: :too_many_request, message: String.to_integer(retry_after)}}
+        {:error, %Error{reason: :too_many_request, message: retry_seconds(retry_after)}}
 
       %Tesla.Env{status: 504} = env ->
         {:error, %Error{reason: :timeout, env: env}}
@@ -138,5 +144,11 @@ defmodule TeslaApi.Vehicle do
   defp handle_response({:error, reason}, _opts) do
     {:error, %Error{reason: :unknown, message: reason}}
   end
-end
+  defp retry_seconds(value) do
+    case Integer.parse(value) do
+      {seconds, ""} when seconds >= 0 -> seconds
+      _ -> 300
+    end
+  end
 
+end

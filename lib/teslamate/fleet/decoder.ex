@@ -5,6 +5,7 @@ defmodule TeslaMate.Fleet.Decoder do
     "VehicleSpeed" => {"drive_state", "speed", :number},
     "GpsHeading" => {"drive_state", "heading", :number},
     "Odometer" => {"vehicle_state", "odometer", :number},
+    "Soc" => {"charge_state", "usable_battery_level", :integer},
     "BatteryLevel" => {"charge_state", "battery_level", :integer},
     "IdealBatteryRange" => {"charge_state", "ideal_battery_range", :number},
     "EstBatteryRange" => {"charge_state", "est_battery_range", :number},
@@ -43,11 +44,13 @@ defmodule TeslaMate.Fleet.Decoder do
 
   def merge(snapshot, %{"data" => data}, at) do
     ts = DateTime.to_unix(at, :millisecond)
-    snapshot = Enum.reduce(@groups, snapshot, &Map.put_new(&2, &1, %{}))
+    snapshot = Enum.reduce(@groups, snapshot, fn group, acc -> Map.update(acc, group, %{}, &(&1 || %{})) end)
 
+    snapshot = reset_charge_session(snapshot, data)
     snapshot = Enum.reduce(data, snapshot, fn %{"key" => key, "value" => encoded}, acc ->
       value = value(encoded)
       acc = put_in(acc, [Access.key("_signals", %{}), key], value)
+      acc = put_in(acc, [Access.key("_signal_times", %{}), key], ts)
       case @fields[key] do
         {group, field, type} -> put_in(acc, [group, field], cast(value, type))
         nil -> special(acc, key, value)
@@ -61,7 +64,11 @@ defmodule TeslaMate.Fleet.Decoder do
       false -> get_in(snapshot, ["_signals", "ACChargingPower"])
       nil -> nil
     end
-    snapshot = if is_number(power), do: put_in(snapshot, ["charge_state", "charger_power"], round(power)), else: snapshot
+    snapshot = cond do
+      is_number(power) -> put_in(snapshot, ["charge_state", "charger_power"], round(power))
+      Map.has_key?(snapshot["_signals"] || %{}, if(fast, do: "DCChargingPower", else: "ACChargingPower")) -> put_in(snapshot, ["charge_state", "charger_power"], nil)
+      true -> snapshot
+    end
 
     snapshot
     |> put_in(["drive_state", "power"], nil)
@@ -74,9 +81,26 @@ defmodule TeslaMate.Fleet.Decoder do
       ["vehicle_state", "odometer"], ["charge_state", "battery_level"],
       ["charge_state", "ideal_battery_range"], ["charge_state", "battery_range"]]
     Enum.all?(numeric, &(is_number(get_in(s, &1)))) and
+      is_map(s["climate_state"]) and
+      Map.has_key?(s["drive_state"] || %{}, "shift_state") and
       get_in(s, ["drive_state", "shift_state"]) in [nil, "P", "D", "N", "R"] and
       get_in(s, ["charge_state", "charging_state"]) in ~w(Disconnected NoPower Starting Charging Complete Stopped) and
       is_binary(get_in(s, ["vehicle_config", "car_type"])) and charge_ready?(s)
+  end
+
+  defp reset_charge_session(s, data) do
+    charging? = Enum.any?(data, fn
+      %{"key" => "DetailedChargeState", "value" => v} -> value(v) in ~w(DetailedChargeStateStarting DetailedChargeStateCharging)
+      _ -> false
+    end)
+    if charging? and get_in(s, ["charge_state", "charging_state"]) not in ~w(Starting Charging) do
+      s
+      |> put_in(["charge_state", "charge_energy_added"], nil)
+      |> put_in(["charge_state", "charger_power"], nil)
+      |> Map.update("_signals", %{}, &Map.drop(&1, ~w(DCChargingPower ACChargingPower DCChargingEnergyIn)))
+    else
+      s
+    end
   end
 
   defp charge_ready?(s) do

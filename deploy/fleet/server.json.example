@@ -1,0 +1,12 @@
+{
+  "host": "0.0.0.0",
+  "port": 443,
+  "log_level": "info",
+  "json_log_enable": true,
+  "namespace": "teslamate",
+  "transmit_decoded_records": true,
+  "reliable_ack_sources": {"V": "kafka"},
+  "kafka": {"bootstrap.servers": "kafka:9092", "acks": "all", "enable.idempotence": true},
+  "records": {"V": ["kafka"], "connectivity": ["kafka"], "errors": ["logger"]},
+  "tls": {"server_cert": "/etc/fleet/fullchain.pem", "server_key": "/etc/fleet/privkey.pem"}
+}
