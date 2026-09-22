@@ -61,7 +61,8 @@ defmodule TeslaMate.Api do
   # Fleet Telemetry replaces the retired Owner streaming transport.
   def stream(_name \\ @name, _vid, _receiver), do: {:ok, nil}
 
-  def install_auth(name, %Auth{} = auth), do: GenServer.call(name, {:install_auth, auth}, @timeout)
+  def install_auth(name, %Auth{} = auth),
+    do: GenServer.call(name, {:install_auth, auth}, @timeout)
 
   ## Internals
 
@@ -114,8 +115,14 @@ defmodule TeslaMate.Api do
 
     state =
       case call(deps.auth, :get_tokens) do
-        %Tokens{access: at, refresh: rt, provider: provider} when is_binary(at) and is_binary(rt) and provider == "fleet_cn" ->
-          restored_tokens = %Auth{token: at, refresh_token: rt, expires_in: 10 * 60, provider: provider}
+        %Tokens{access: at, refresh: rt, provider: provider}
+        when is_binary(at) and is_binary(rt) and provider == "fleet_cn" ->
+          restored_tokens = %Auth{
+            token: at,
+            refresh_token: rt,
+            expires_in: 10 * 60,
+            provider: provider
+          }
 
           {:ok, state} =
             case refresh_tokens(restored_tokens) do
@@ -155,7 +162,9 @@ defmodule TeslaMate.Api do
         {:ok, state} = schedule_refresh(auth, state)
         :ok = :fuse.reset(fuse_name(state.name))
         {:reply, :ok, state}
-      error -> {:reply, error, state}
+
+      error ->
+        {:reply, error, state}
     end
   end
 
@@ -178,8 +187,11 @@ defmodule TeslaMate.Api do
   @impl true
   def handle_call({:sign_in, args}, _, %State{} = state) do
     case args do
-      [args, callback] when is_function(callback) -> apply(callback, args)
-      [%Tokens{} = t] -> Auth.refresh(%Auth{token: t.access, refresh_token: t.refresh, provider: t.provider})
+      [args, callback] when is_function(callback) ->
+        apply(callback, args)
+
+      [%Tokens{} = t] ->
+        Auth.refresh(%Auth{token: t.access, refresh_token: t.refresh, provider: t.provider})
     end
     |> case do
       {:ok, %Auth{} = auth} ->
@@ -377,6 +389,7 @@ defmodule TeslaMate.Api do
       end
     end)
   end
+
   defp vehicle_identifier(id, _tenant_id), do: id
 
   defp tenant_id_for(@name), do: nil
@@ -407,4 +420,3 @@ defmodule TeslaMate.Api do
 
   defp fuse_name(name), do: :"#{__MODULE__}.#{:erlang.phash2(name)}.unauthorized"
 end
-

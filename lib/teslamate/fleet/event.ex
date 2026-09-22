@@ -1,5 +1,6 @@
 defmodule TeslaMate.Fleet.Event do
   use Ecto.Schema
+
   schema "fleet_events" do
     belongs_to :car, TeslaMate.Log.Car
     field :source, :string

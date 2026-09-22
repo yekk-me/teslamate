@@ -1,0 +1,29 @@
+# Attach to the TeslaMate service network. Kafka is provisioned separately.
+services:
+  fleet-telemetry:
+    image: ${FLEET_TELEMETRY_IMAGE:?Set a tested pinned official receiver image}
+    restart: unless-stopped
+    command: ["/fleet-telemetry", "-config=/etc/fleet/server.json"]
+    ports: ["${FLEET_TELEMETRY_PORT:-443}:443"]
+    volumes:
+      - ./server.json:/etc/fleet/server.json:ro
+      - ./certificates:/etc/fleet:ro
+    networks: [teslamate]
+  fleet-bridge:
+    build: ../../tools/fleet
+    restart: unless-stopped
+    environment:
+      KAFKA_CONSUMER_CONFIG: /etc/bridge/consumer.json
+      FLEET_VIN_ROUTES: /etc/bridge/routes.json
+      FLEET_KAFKA_TOPIC: teslamate_V
+      TESLAMATE_INTERNAL_URL: http://teslamate:4000
+      TESLAMATE_INTERNAL_API_TOKEN_FILE: /run/secrets/internal_api_token
+    volumes:
+      - ./consumer.json:/etc/bridge/consumer.json:ro
+      - ./routes.json:/etc/bridge/routes.json:ro
+      - ./internal_api_token:/run/secrets/internal_api_token:ro
+    networks: [teslamate]
+networks:
+  teslamate:
+    external: true
+    name: ${TESLAMATE_DOCKER_NETWORK:-teslamate_default}

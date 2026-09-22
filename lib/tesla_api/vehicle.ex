@@ -25,16 +25,33 @@ defmodule TeslaApi.Vehicle do
   def list(%Auth{} = auth), do: list_page(auth, 1, [], MapSet.new())
 
   defp list_page(auth, page, pages, seen) do
-    response = TeslaApi.get(endpoint_url(auth) <> "/api/1/vehicles",
-      query: [page: page, per_page: 100], opts: [access_token: auth.token])
+    response =
+      TeslaApi.get(endpoint_url(auth) <> "/api/1/vehicles",
+        query: [page: page, per_page: 100],
+        opts: [access_token: auth.token]
+      )
       |> handle_response(transform: & &1)
+
     with {:ok, rows} when is_list(rows) <- response do
       ids = Enum.map(rows, &(&1["vin"] || &1["id"]))
+
       cond do
-        Enum.any?(ids, &MapSet.member?(seen, &1)) -> {:error, %Error{reason: :invalid_pagination}}
-        length(rows) < 100 -> {:ok, pages |> Enum.reverse() |> List.flatten() |> Kernel.++(list_result(rows))}
-        page >= 1000 -> {:error, %Error{reason: :pagination_limit}}
-        true -> list_page(auth, page + 1, [list_result(rows) | pages], Enum.reduce(ids, seen, &MapSet.put(&2, &1)))
+        Enum.any?(ids, &MapSet.member?(seen, &1)) ->
+          {:error, %Error{reason: :invalid_pagination}}
+
+        length(rows) < 100 ->
+          {:ok, pages |> Enum.reverse() |> List.flatten() |> Kernel.++(list_result(rows))}
+
+        page >= 1000 ->
+          {:error, %Error{reason: :pagination_limit}}
+
+        true ->
+          list_page(
+            auth,
+            page + 1,
+            [list_result(rows) | pages],
+            Enum.reduce(ids, seen, &MapSet.put(&2, &1))
+          )
       end
     end
   end
@@ -144,11 +161,11 @@ defmodule TeslaApi.Vehicle do
   defp handle_response({:error, reason}, _opts) do
     {:error, %Error{reason: :unknown, message: reason}}
   end
+
   defp retry_seconds(value) do
     case Integer.parse(value) do
       {seconds, ""} when seconds >= 0 -> seconds
       _ -> 300
     end
   end
-
 end

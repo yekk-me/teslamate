@@ -1,109 +1,14 @@
-<div class="mfa columns is-tablet is-centered">
+<div class="columns is-centered">
   <div class="column is-half">
-    <.form
-      :let={f}
-      for={@changeset}
-      phx-change="validate"
-      phx-submit="sign_in"
-      class="box"
-      as={:tokens}
-    >
-      <%= if @error do %>
-        <div class="notification is-danger">
-          Error: <%= @error %>
-        </div>
-      <% end %>
-
-      <%= if @token == "" do %>
-        <div class="field">
-          <%= label(f, :access, gettext("Access Token"), class: "label") %>
-          <div class="control has-icons-left">
-            <%= text_input(f, :access,
-              class: "input is-rounded",
-              autocorrect: "off",
-              autocapitalize: "none",
-              spellcheck: "false",
-              disabled: !!@task
-            ) %>
-            <span class="icon is-small is-left">
-              <i class="mdi mdi-api"></i>
-            </span>
-          </div>
-        </div>
-
-        <div class="field">
-          <%= label(f, :refresh, gettext("Refresh Token"), class: "label") %>
-          <div class="control has-icons-left">
-            <%= text_input(f, :refresh,
-              class: "input is-rounded",
-              autocorrect: "off",
-              autocapitalize: "none",
-              spellcheck: "false",
-              disabled: !!@task
-            ) %>
-            <span class="icon is-small is-left">
-              <i class="mdi mdi-cloud-refresh"></i>
-            </span>
-          </div>
-        </div>
+    <div class="box">
+      <h1 class="title is-4">Tesla Fleet API · 中国大陆</h1>
+      <p>请通过账户中心连接特斯拉账号，并在特斯拉官方页面完成授权。</p>
+      <p>本服务使用官方 Fleet API，不再接收旧版 Owner API 令牌。</p>
+      <%= if @portal do %>
+        <a href={@portal} class="button is-link mt-5">前往账户中心授权</a>
       <% else %>
-        <p class="is-size-7 has-text-centered is-italic has-text-weight-light">
-          <% provider_link =
-            link(@provider,
-              to: @provider,
-              target: "_blank",
-              rel: "noopener noreferrer"
-            ) %>
-
-          <%= raw(
-            gettext(
-              "You are using the API key (%{token}) provided by %{url}. It will allow your TeslaMate to access the official Tesla Fleet API and Tesla Telemetry streaming.",
-              token: @token,
-              url: safe_to_string(provider_link)
-            )
-          ) %>
-        </p>
+        <p class="notification is-info mt-5">请联系管理员获取账户中心的授权入口。</p>
       <% end %>
-
-      <div class="field mt-5">
-        <div class="control">
-          <%= submit(gettext("Sign in"),
-            class: [
-              "button",
-              "is-rounded",
-              "is-fullwidth",
-              "is-link",
-              if(!!@task, do: "is-loading")
-            ],
-            disabled:
-              if @token == "" do
-                !@changeset.valid?
-              else
-                false
-              end,
-            phx_disable_with: gettext("Saving...")
-          ) %>
-        </div>
-      </div>
-
-      <%= if @token == "" do %>
-        <p class="is-size-7 has-text-centered">
-          <% here_link =
-            link(gettext("here"),
-              to: "https://yekk.me/tm-login",
-              target: "_blank",
-              class: "has-text-link has-text-weight-bold",
-              rel: "noopener noreferrer"
-            ) %>
-
-          <%= raw(
-            gettext(
-              "Obtaining tokens through the Tesla API requires programming experience or a 3rd-party service. Information can be found %{here}.",
-              here: safe_to_string(here_link)
-            )
-          ) %>
-        </p>
-      <% end %>
-    </.form>
+    </div>
   </div>
 </div>

@@ -69,4 +69,3 @@ defmodule TeslaMate.Auth do
     |> Repo.update()
   end
 end
-

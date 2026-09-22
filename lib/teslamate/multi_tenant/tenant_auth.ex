@@ -143,4 +143,3 @@ defmodule TeslaMate.MultiTenant.TenantAuth do
 
   defp int_or_nil(_value), do: nil
 end
-

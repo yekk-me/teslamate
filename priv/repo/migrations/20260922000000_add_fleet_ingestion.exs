@@ -21,6 +21,7 @@ defmodule TeslaMate.Repo.Migrations.AddFleetIngestion do
       add :status, :text, null: false, default: "pending"
       add :error, :text
     end
+
     create unique_index(:fleet_events, [:car_id, :event_key])
     create index(:fleet_events, [:car_id, :status, :recorded_at, :id])
 

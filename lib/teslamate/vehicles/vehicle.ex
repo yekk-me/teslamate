@@ -905,7 +905,8 @@ defmodule TeslaMate.Vehicles.Vehicle do
               call(data.deps.log, :start_charging_process, [
                 data.car,
                 position,
-                [lookup_address: !data.import?] ++ if(data.fleet?, do: [date: position.date], else: [])
+                [lookup_address: !data.import?] ++
+                  if(data.fleet?, do: [date: position.date], else: [])
               ])
 
             :ok = insert_charge(cproc, vehicle, data)
@@ -1054,7 +1055,8 @@ defmodule TeslaMate.Vehicles.Vehicle do
               call(data.deps.log, :start_charging_process, [
                 data.car,
                 create_position(last, data),
-                [lookup_address: !data.import?] ++ if(data.fleet?, do: [date: position.date], else: [])
+                [lookup_address: !data.import?] ++
+                  if(data.fleet?, do: [date: parse_timestamp(last.drive_state.timestamp)], else: [])
               ])
 
             :ok = insert_charge(cproc, put_charge_defaults(last), data)
@@ -1578,7 +1580,13 @@ defmodule TeslaMate.Vehicles.Vehicle do
 
     {:ok, {drive, geofence}} =
       Repo.transaction(fn ->
-        {:ok, drive} = call(deps.log, :start_drive, if(data.fleet?, do: [car, [date: position.date]], else: [car]))
+        {:ok, drive} =
+          call(
+            deps.log,
+            :start_drive,
+            if(data.fleet?, do: [car, [date: position.date]], else: [car])
+          )
+
         {:ok, pos} = call(deps.log, :insert_position, [drive, position])
         geofence = call(deps.locations, :find_geofence, [pos])
         {drive, geofence}
@@ -1767,4 +1775,3 @@ defmodule TeslaMate.Vehicles.Vehicle do
     _ -> defp diff_seconds(a, b), do: DateTime.diff(a, b, :second)
   end
 end
-

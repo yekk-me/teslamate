@@ -44,43 +44,72 @@ defmodule TeslaMate.Fleet.Decoder do
 
   def merge(snapshot, %{"data" => data}, at) do
     ts = DateTime.to_unix(at, :millisecond)
-    snapshot = Enum.reduce(@groups, snapshot, fn group, acc -> Map.update(acc, group, %{}, &(&1 || %{})) end)
+
+    snapshot =
+      Enum.reduce(@groups, snapshot, fn group, acc ->
+        Map.update(acc, group, %{}, &(&1 || %{}))
+      end)
 
     snapshot = reset_charge_session(snapshot, data)
-    snapshot = Enum.reduce(data, snapshot, fn %{"key" => key, "value" => encoded}, acc ->
-      value = value(encoded)
-      acc = put_in(acc, [Access.key("_signals", %{}), key], value)
-      acc = put_in(acc, [Access.key("_signal_times", %{}), key], ts)
-      case @fields[key] do
-        {group, field, type} -> put_in(acc, [group, field], cast(value, type))
-        nil -> special(acc, key, value)
-      end
-    end)
+
+    snapshot =
+      Enum.reduce(data, snapshot, fn %{"key" => key, "value" => encoded}, acc ->
+        value = value(encoded)
+        acc = put_in(acc, [Access.key("_signals", %{}), key], value)
+        acc = put_in(acc, [Access.key("_signal_times", %{}), key], ts)
+
+        case @fields[key] do
+          {group, field, type} -> put_in(acc, [group, field], cast(value, type))
+          nil -> special(acc, key, value)
+        end
+      end)
 
     # AC energy is charger-side. Only DCChargingEnergyIn is equivalent to battery energy added.
     fast = get_in(snapshot, ["charge_state", "fast_charger_present"])
-    power = case fast do
-      true -> get_in(snapshot, ["_signals", "DCChargingPower"])
-      false -> get_in(snapshot, ["_signals", "ACChargingPower"])
-      nil -> nil
-    end
-    snapshot = cond do
-      is_number(power) -> put_in(snapshot, ["charge_state", "charger_power"], round(power))
-      Map.has_key?(snapshot["_signals"] || %{}, if(fast, do: "DCChargingPower", else: "ACChargingPower")) -> put_in(snapshot, ["charge_state", "charger_power"], nil)
-      true -> snapshot
-    end
+
+    power =
+      case fast do
+        true -> get_in(snapshot, ["_signals", "DCChargingPower"])
+        false -> get_in(snapshot, ["_signals", "ACChargingPower"])
+        nil -> nil
+      end
+
+    snapshot =
+      cond do
+        is_number(power) ->
+          put_in(snapshot, ["charge_state", "charger_power"], round(power))
+
+        Map.has_key?(
+          snapshot["_signals"] || %{},
+          if(fast, do: "DCChargingPower", else: "ACChargingPower")
+        ) ->
+          put_in(snapshot, ["charge_state", "charger_power"], nil)
+
+        true ->
+          snapshot
+      end
 
     snapshot
     |> put_in(["drive_state", "power"], nil)
     |> Map.put("state", "online")
-    |> then(fn s -> Enum.reduce(@groups -- ["vehicle_config"], s, fn group, acc -> put_in(acc, [group, "timestamp"], ts) end) end)
+    |> then(fn s ->
+      Enum.reduce(@groups -- ["vehicle_config"], s, fn group, acc ->
+        put_in(acc, [group, "timestamp"], ts)
+      end)
+    end)
   end
 
   def ready?(s) do
-    numeric = [["drive_state", "latitude"], ["drive_state", "longitude"],
-      ["vehicle_state", "odometer"], ["charge_state", "battery_level"],
-      ["charge_state", "ideal_battery_range"], ["charge_state", "battery_range"]]
-    Enum.all?(numeric, &(is_number(get_in(s, &1)))) and
+    numeric = [
+      ["drive_state", "latitude"],
+      ["drive_state", "longitude"],
+      ["vehicle_state", "odometer"],
+      ["charge_state", "battery_level"],
+      ["charge_state", "ideal_battery_range"],
+      ["charge_state", "battery_range"]
+    ]
+
+    Enum.all?(numeric, &is_number(get_in(s, &1))) and
       is_map(s["climate_state"]) and
       Map.has_key?(s["drive_state"] || %{}, "shift_state") and
       get_in(s, ["drive_state", "shift_state"]) in [nil, "P", "D", "N", "R"] and
@@ -89,15 +118,24 @@ defmodule TeslaMate.Fleet.Decoder do
   end
 
   defp reset_charge_session(s, data) do
-    charging? = Enum.any?(data, fn
-      %{"key" => "DetailedChargeState", "value" => v} -> value(v) in ~w(DetailedChargeStateStarting DetailedChargeStateCharging)
-      _ -> false
-    end)
+    charging? =
+      Enum.any?(data, fn
+        %{"key" => "DetailedChargeState", "value" => v} ->
+          value(v) in ~w(DetailedChargeStateStarting DetailedChargeStateCharging)
+
+        _ ->
+          false
+      end)
+
     if charging? and get_in(s, ["charge_state", "charging_state"]) not in ~w(Starting Charging) do
       s
       |> put_in(["charge_state", "charge_energy_added"], nil)
       |> put_in(["charge_state", "charger_power"], nil)
-      |> Map.update("_signals", %{}, &Map.drop(&1, ~w(DCChargingPower ACChargingPower DCChargingEnergyIn)))
+      |> Map.update(
+        "_signals",
+        %{},
+        &Map.drop(&1, ~w(DCChargingPower ACChargingPower DCChargingEnergyIn))
+      )
     else
       s
     end
@@ -113,28 +151,70 @@ defmodule TeslaMate.Fleet.Decoder do
   end
 
   defp special(s, "Location", %{"latitude" => lat, "longitude" => lon})
-      when is_number(lat) and lat >= -90 and lat <= 90 and is_number(lon) and lon >= -180 and lon <= 180,
-    do: s |> put_in(["drive_state", "latitude"], lat) |> put_in(["drive_state", "longitude"], lon)
-  defp special(s, "Location", _), do: s |> put_in(["drive_state", "latitude"], nil) |> put_in(["drive_state", "longitude"], nil)
+       when is_number(lat) and lat >= -90 and lat <= 90 and is_number(lon) and lon >= -180 and
+              lon <= 180,
+       do:
+         s
+         |> put_in(["drive_state", "latitude"], lat)
+         |> put_in(["drive_state", "longitude"], lon)
+
+  defp special(s, "Location", _),
+    do: s |> put_in(["drive_state", "latitude"], nil) |> put_in(["drive_state", "longitude"], nil)
+
   defp special(s, "Gear", v) do
-    gear = case v do
-      "ShiftState" <> g when g in ~w(P R N D) -> g
-      g when g in ~w(P R N D) -> g
-      _ -> "unknown"
-    end
+    gear =
+      case v do
+        "ShiftState" <> g when g in ~w(P R N D) -> g
+        g when g in ~w(P R N D) -> g
+        _ -> "unknown"
+      end
+
     put_in(s, ["drive_state", "shift_state"], gear)
   end
+
   defp special(s, "DetailedChargeState", v) do
-    state = case v do
-      "DetailedChargeState" <> c when c in ~w(Disconnected NoPower Starting Charging Complete Stopped) -> c
-      _ -> "Unknown"
-    end
+    state =
+      case v do
+        "DetailedChargeState" <> c
+        when c in ~w(Disconnected NoPower Starting Charging Complete Stopped) ->
+          c
+
+        _ ->
+          "Unknown"
+      end
+
     put_in(s, ["charge_state", "charging_state"], state)
   end
-  defp special(s, "CarType", "CarType" <> type), do: put_in(s, ["vehicle_config", "car_type"], String.downcase(type))
+
+  defp special(s, "CarType", "CarType" <> type),
+    do: put_in(s, ["vehicle_config", "car_type"], String.downcase(type))
+
   defp special(s, "CarType", v), do: put_in(s, ["vehicle_config", "car_type"], v)
-  defp special(s, "HvacPower", v), do: put_in(s, ["climate_state", "is_climate_on"], enum_bool(v, "HvacPowerStateOff", ~w(HvacPowerStateOn HvacPowerStatePrecondition HvacPowerStateOverheatProtect)))
-  defp special(s, "SentryMode", v), do: put_in(s, ["vehicle_state", "sentry_mode"], enum_bool(v, "SentryModeStateOff", ~w(SentryModeStateIdle SentryModeStateArmed SentryModeStateAware SentryModeStatePanic SentryModeStateQuiet)))
+
+  defp special(s, "HvacPower", v),
+    do:
+      put_in(
+        s,
+        ["climate_state", "is_climate_on"],
+        enum_bool(
+          v,
+          "HvacPowerStateOff",
+          ~w(HvacPowerStateOn HvacPowerStatePrecondition HvacPowerStateOverheatProtect)
+        )
+      )
+
+  defp special(s, "SentryMode", v),
+    do:
+      put_in(
+        s,
+        ["vehicle_state", "sentry_mode"],
+        enum_bool(
+          v,
+          "SentryModeStateOff",
+          ~w(SentryModeStateIdle SentryModeStateArmed SentryModeStateAware SentryModeStatePanic SentryModeStateQuiet)
+        )
+      )
+
   defp special(s, _key, _v), do: s
 
   defp enum_bool(off, off, _), do: false
@@ -144,18 +224,21 @@ defmodule TeslaMate.Fleet.Decoder do
   defp value(_), do: nil
   defp cast(nil, _), do: nil
   defp cast(v, :number) when is_number(v), do: v
+
   defp cast(v, :number) when is_binary(v) do
     case Float.parse(v) do
       {n, ""} -> n
       _ -> nil
     end
   end
+
   defp cast(v, :integer) do
     case cast(v, :number) do
       n when is_number(n) -> round(n)
       _ -> nil
     end
   end
+
   defp cast(v, :boolean) when is_boolean(v), do: v
   defp cast("true", :boolean), do: true
   defp cast("false", :boolean), do: false

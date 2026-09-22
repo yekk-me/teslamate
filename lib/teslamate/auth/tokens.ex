@@ -22,4 +22,3 @@ defmodule TeslaMate.Auth.Tokens do
     |> validate_required([:access, :refresh, :provider])
   end
 end
-

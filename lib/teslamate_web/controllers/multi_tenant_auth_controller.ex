@@ -5,8 +5,11 @@ defmodule TeslaMateWeb.MultiTenantAuthController do
 
   def begin_fleet(conn, %{"tenant_id" => tenant_id}) do
     case TeslaMate.Fleet.OAuth.begin(tenant_id) do
-      {:ok, result} -> json(conn, %{data: result})
-      {:error, reason} -> conn |> put_status(:unprocessable_entity) |> json(%{error: format_reason(reason)})
+      {:ok, result} ->
+        json(conn, %{data: result})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: format_reason(reason)})
     end
   end
 
@@ -38,4 +41,3 @@ defmodule TeslaMateWeb.MultiTenantAuthController do
   defp format_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp format_reason(reason), do: inspect(reason)
 end
-

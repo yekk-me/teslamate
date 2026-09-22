@@ -15,6 +15,8 @@ defmodule TeslaMate.Fleet.OAuth do
       end)
       {:ok, %{authorization_url: url, expires_in: 600}}
     end
+  rescue
+    _ in RuntimeError -> {:error, :tenant_repo_not_running}
   end
 
   def consume(tenant_id, state) when is_binary(state) and byte_size(state) in 32..128 do

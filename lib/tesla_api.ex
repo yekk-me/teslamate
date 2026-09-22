@@ -10,4 +10,3 @@ defmodule TeslaApi do
   plug Tesla.Middleware.JSON
   plug TeslaApi.Middleware.TokenAuth
 end
-

@@ -98,4 +98,3 @@ defmodule TeslaMate.HTTP do
     |> Finch.request(__MODULE__, opts)
   end
 end
-

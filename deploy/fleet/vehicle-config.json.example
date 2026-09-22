@@ -1,0 +1,151 @@
+{
+  "hostname": "REPLACE_WITH_TELEMETRY_HOSTNAME",
+  "port": 443,
+  "ca": "REPLACE_WITH_FULL_PEM_CERTIFICATE_CHAIN",
+  "fields": {
+    "Location": {
+      "interval_seconds": 1
+    },
+    "VehicleSpeed": {
+      "interval_seconds": 1
+    },
+    "Gear": {
+      "interval_seconds": 1
+    },
+    "GpsHeading": {
+      "interval_seconds": 1
+    },
+    "Odometer": {
+      "interval_seconds": 1,
+      "minimum_delta": 1e-06
+    },
+    "BatteryLevel": {
+      "interval_seconds": 5
+    },
+    "Soc": {
+      "interval_seconds": 5
+    },
+    "IdealBatteryRange": {
+      "interval_seconds": 5,
+      "minimum_delta": 1e-06
+    },
+    "EstBatteryRange": {
+      "interval_seconds": 5,
+      "minimum_delta": 1e-06
+    },
+    "RatedRange": {
+      "interval_seconds": 5,
+      "minimum_delta": 1e-06
+    },
+    "DetailedChargeState": {
+      "interval_seconds": 5
+    },
+    "DCChargingEnergyIn": {
+      "interval_seconds": 5,
+      "minimum_delta": 1e-06
+    },
+    "ACChargingEnergyIn": {
+      "interval_seconds": 5,
+      "minimum_delta": 1e-06
+    },
+    "ACChargingPower": {
+      "interval_seconds": 5
+    },
+    "DCChargingPower": {
+      "interval_seconds": 5
+    },
+    "ChargeAmps": {
+      "interval_seconds": 5
+    },
+    "ChargerVoltage": {
+      "interval_seconds": 5
+    },
+    "ChargerPhases": {
+      "interval_seconds": 5
+    },
+    "FastChargerPresent": {
+      "interval_seconds": 5
+    },
+    "ChargeCurrentRequest": {
+      "interval_seconds": 5
+    },
+    "ChargeCurrentRequestMax": {
+      "interval_seconds": 5
+    },
+    "NotEnoughPowerToHeat": {
+      "interval_seconds": 5
+    },
+    "BatteryHeaterOn": {
+      "interval_seconds": 5
+    },
+    "ChargePortDoorOpen": {
+      "interval_seconds": 5
+    },
+    "ChargeLimitSoc": {
+      "interval_seconds": 5
+    },
+    "EstimatedHoursToChargeTermination": {
+      "interval_seconds": 5
+    },
+    "InsideTemp": {
+      "interval_seconds": 30
+    },
+    "OutsideTemp": {
+      "interval_seconds": 30
+    },
+    "HvacPower": {
+      "interval_seconds": 30
+    },
+    "HvacFanStatus": {
+      "interval_seconds": 30
+    },
+    "HvacLeftTemperatureRequest": {
+      "interval_seconds": 30
+    },
+    "HvacRightTemperatureRequest": {
+      "interval_seconds": 30
+    },
+    "RearDefrostEnabled": {
+      "interval_seconds": 30
+    },
+    "Locked": {
+      "interval_seconds": 30
+    },
+    "DriverSeatOccupied": {
+      "interval_seconds": 30
+    },
+    "SentryMode": {
+      "interval_seconds": 30
+    },
+    "TpmsPressureFl": {
+      "interval_seconds": 60
+    },
+    "TpmsPressureFr": {
+      "interval_seconds": 60
+    },
+    "TpmsPressureRl": {
+      "interval_seconds": 60
+    },
+    "TpmsPressureRr": {
+      "interval_seconds": 60
+    },
+    "Version": {
+      "interval_seconds": 300
+    },
+    "VehicleName": {
+      "interval_seconds": 300
+    },
+    "CarType": {
+      "interval_seconds": 300
+    },
+    "Trim": {
+      "interval_seconds": 300
+    },
+    "ExteriorColor": {
+      "interval_seconds": 300
+    },
+    "WheelType": {
+      "interval_seconds": 300
+    }
+  }
+}
