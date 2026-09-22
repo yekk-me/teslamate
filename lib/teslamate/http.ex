@@ -10,14 +10,14 @@ defmodule TeslaMate.HTTP do
       end
 
     %{
-      System.get_env("TESLA_API_HOST", "https://owner-api.teslamotors.com") => [
+      TeslaApi.Fleet.api_url() => [
         size: System.get_env("TESLA_API_POOL_SIZE", "10") |> String.to_integer()
       ],
       "https://nominatim.openstreetmap.org" => [size: 3] ++ nominatim_proxy,
       "https://nominatim-osm.mytesla.cc" => [size: 3],
       "https://restapi.amap.com" => [size: 3],
       "https://api.github.com" => [size: 1],
-      System.get_env("TESLA_AUTH_HOST", "https://auth.tesla.com") => [
+      "https://auth.tesla.cn" => [
         protocols: [:http1, :http2],
         conn_opts: [
           transport_opts: [
@@ -98,3 +98,4 @@ defmodule TeslaMate.HTTP do
     |> Finch.request(__MODULE__, opts)
   end
 end
+

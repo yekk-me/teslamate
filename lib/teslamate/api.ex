@@ -43,7 +43,7 @@ defmodule TeslaMate.Api do
 
     with :ok <- allow_tesla_api(tenant_id),
          {:ok, auth} <- fetch_auth(name) do
-      TeslaApi.Vehicle.get(auth, id)
+      TeslaApi.Vehicle.get(auth, vehicle_identifier(id, tenant_id))
       |> handle_result(auth, name, tenant_id)
     end
   end
@@ -53,19 +53,15 @@ defmodule TeslaMate.Api do
 
     with :ok <- allow_tesla_api(tenant_id),
          {:ok, auth} <- fetch_auth(name) do
-      TeslaApi.Vehicle.get_with_state(auth, id)
+      TeslaApi.Vehicle.get_with_state(auth, vehicle_identifier(id, tenant_id))
       |> handle_result(auth, name, tenant_id)
     end
   end
 
-  def stream(name \\ @name, vid, receiver) do
-    tenant_id = tenant_id_for(name)
+  # Fleet Telemetry replaces the retired Owner streaming transport.
+  def stream(_name \\ @name, _vid, _receiver), do: {:ok, nil}
 
-    with :ok <- allow_tesla_api(tenant_id),
-         {:ok, %Auth{} = auth} <- fetch_auth(name) do
-      TeslaApi.Stream.start_link(auth: auth, vehicle_id: vid, receiver: receiver)
-    end
-  end
+  def install_auth(name, %Auth{} = auth), do: GenServer.call(name, {:install_auth, auth}, @timeout)
 
   ## Internals
 
@@ -123,8 +119,8 @@ defmodule TeslaMate.Api do
 
     state =
       case call(deps.auth, :get_tokens) do
-        %Tokens{access: at, refresh: rt} when is_binary(at) and is_binary(rt) ->
-          restored_tokens = %Auth{token: at, refresh_token: rt, expires_in: 10 * 60}
+        %Tokens{access: at, refresh: rt, provider: provider} when is_binary(at) and is_binary(rt) ->
+          restored_tokens = %Auth{token: at, refresh_token: rt, expires_in: 10 * 60, provider: provider}
 
           {:ok, state} =
             case refresh_tokens(restored_tokens) do
@@ -157,6 +153,17 @@ defmodule TeslaMate.Api do
     {:reply, fetch_auth(state), state}
   end
 
+  def handle_call({:install_auth, auth}, _from, state) do
+    case call(state.deps.auth, :save, [auth]) do
+      :ok ->
+        true = insert_auth(state, auth)
+        {:ok, state} = schedule_refresh(auth, state)
+        :ok = :fuse.reset(fuse_name(state.name))
+        {:reply, :ok, state}
+      error -> {:reply, error, state}
+    end
+  end
+
   def handle_call(:tenant_id, _from, %State{} = state) do
     {:reply, state.tenant_id, state}
   end
@@ -177,7 +184,7 @@ defmodule TeslaMate.Api do
   def handle_call({:sign_in, args}, _, %State{} = state) do
     case args do
       [args, callback] when is_function(callback) -> apply(callback, args)
-      [%Tokens{} = t] -> Auth.refresh(%Auth{token: t.access, refresh_token: t.refresh})
+      [%Tokens{} = t] -> Auth.refresh(%Auth{token: t.access, refresh_token: t.refresh, provider: t.provider})
     end
     |> case do
       {:ok, %Auth{} = auth} ->
@@ -288,7 +295,8 @@ defmodule TeslaMate.Api do
 
   defp fetch_auth(%State{auth_table: table}) do
     case :ets.lookup(table, :auth) do
-      [auth: %Auth{} = auth] -> {:ok, auth}
+      [auth: %Auth{provider: "fleet_cn"} = auth] -> {:ok, auth}
+      [auth: %Auth{}] -> {:error, :not_signed_in}
       [] -> {:error, :not_signed_in}
     end
   rescue
@@ -358,6 +366,16 @@ defmodule TeslaMate.Api do
 
   defp clear_auth(name), do: GenServer.call(name, :clear_auth)
 
+  defp vehicle_identifier(id, tenant_id) when is_integer(id) do
+    TeslaMate.MultiTenant.TenantContext.run(tenant_id, fn ->
+      case TeslaMate.Log.get_car_by(eid: id) do
+        %{vin: vin} when is_binary(vin) -> vin
+        _ -> id
+      end
+    end)
+  end
+  defp vehicle_identifier(id, _tenant_id), do: id
+
   defp tenant_id_for(@name), do: nil
 
   defp tenant_id_for(name) do
@@ -386,3 +404,4 @@ defmodule TeslaMate.Api do
 
   defp fuse_name(name), do: :"#{__MODULE__}.#{:erlang.phash2(name)}.unauthorized"
 end
+

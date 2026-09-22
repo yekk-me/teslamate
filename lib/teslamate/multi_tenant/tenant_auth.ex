@@ -15,6 +15,7 @@ defmodule TeslaMate.MultiTenant.TenantAuth do
     attrs = stringify_keys(attrs)
 
     with :ok <- ensure_tenant_repo(tenant_id, opts),
+         :ok <- validate_fleet_state(tenant_id, attrs, opts),
          {:ok, auth} <- auth_from_attrs(attrs, opts),
          {:ok, auth} <- maybe_refresh(auth, attrs, opts),
          {:ok, vehicles} <- vehicle_api(opts).list(auth),
@@ -31,13 +32,21 @@ defmodule TeslaMate.MultiTenant.TenantAuth do
     run_in_tenant_repo(tenant_id, fn -> :ok end, opts)
   end
 
+  defp validate_fleet_state(tenant_id, attrs, opts) do
+    if not Keyword.has_key?(opts, :auth_api) do
+      TeslaMate.Fleet.OAuth.consume(tenant_id, attrs["state"])
+    else
+      :ok
+    end
+  end
+
   defp auth_from_attrs(attrs, opts) do
     token = string_or_nil(Map.get(attrs, "access_token") || Map.get(attrs, "token"))
     refresh_token = string_or_nil(Map.get(attrs, "refresh_token"))
     code = string_or_nil(Map.get(attrs, "code"))
 
     cond do
-      token && refresh_token ->
+      token && refresh_token && Keyword.has_key?(opts, :auth_api) ->
         {:ok,
          %Auth{
            token: token,
@@ -65,7 +74,11 @@ defmodule TeslaMate.MultiTenant.TenantAuth do
   defp save_auth(tenant_id, %Auth{} = auth, opts) do
     auth_context = Keyword.get(opts, :auth_context, TeslaMate.Auth)
 
-    run_in_tenant_repo(tenant_id, fn -> auth_context.save(auth) end, opts)
+    if auth.provider == "fleet_cn" and not Keyword.has_key?(opts, :auth_context) do
+      TeslaMate.Api.install_auth(TeslaMate.MultiTenant.TenantSupervisor.api_name(tenant_id), auth)
+    else
+      run_in_tenant_repo(tenant_id, fn -> auth_context.save(auth) end, opts)
+    end
   end
 
   defp run_in_tenant_repo(tenant_id, fun, opts) when is_function(fun, 0) do
@@ -102,7 +115,7 @@ defmodule TeslaMate.MultiTenant.TenantAuth do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
-  defp auth_api(opts), do: Keyword.get(opts, :auth_api, TeslaApi.Auth)
+  defp auth_api(opts), do: Keyword.get(opts, :auth_api, if(TeslaApi.Fleet.enabled?(), do: TeslaApi.Fleet, else: TeslaApi.Auth))
   defp vehicle_api(opts), do: Keyword.get(opts, :vehicle_api, TeslaApi.Vehicle)
 
   defp stringify_keys(map) do
@@ -130,3 +143,4 @@ defmodule TeslaMate.MultiTenant.TenantAuth do
 
   defp int_or_nil(_value), do: nil
 end
+

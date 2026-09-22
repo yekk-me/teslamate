@@ -38,7 +38,7 @@ defmodule TeslaMate.MultiTenant.VehicleSupervisor do
     car = materializer.create_or_update!(tenant, vehicle)
     api_name = Keyword.fetch!(opts, :api_name)
 
-    {TeslaMate.Vehicles.Vehicle,
+    {if(System.get_env("TESLA_FLEET_TELEMETRY") == "true", do: TeslaMate.Fleet.Worker, else: TeslaMate.Vehicles.Vehicle),
      car: car,
      name: TeslaMate.MultiTenant.VehicleWorker.via(tenant.id, vehicle.id),
      tenant_id: tenant.id,
@@ -46,3 +46,4 @@ defmodule TeslaMate.MultiTenant.VehicleSupervisor do
      deps_vehicles: {TeslaMate.MultiTenant.TenantVehicles, tenant.id}}
   end
 end
+

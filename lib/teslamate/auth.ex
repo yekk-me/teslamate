@@ -43,8 +43,8 @@ defmodule TeslaMate.Auth do
     end
   end
 
-  def save(%{token: access, refresh_token: refresh}) do
-    attrs = %{access: access, refresh: refresh}
+  def save(%{token: access, refresh_token: refresh} = auth) do
+    attrs = %{access: access, refresh: refresh, provider: Map.get(auth, :provider, "fleet_cn")}
 
     maybe_created_or_updated =
       case get_tokens() do
@@ -69,3 +69,4 @@ defmodule TeslaMate.Auth do
     |> Repo.update()
   end
 end
+

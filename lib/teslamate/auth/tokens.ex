@@ -8,6 +8,7 @@ defmodule TeslaMate.Auth.Tokens do
   @schema_prefix :private
 
   schema "tokens" do
+    field :provider, :string, default: "fleet_cn"
     field :refresh, Encrypted.Binary, redact: true
     field :access, Encrypted.Binary, redact: true
 
@@ -17,7 +18,8 @@ defmodule TeslaMate.Auth.Tokens do
   @doc false
   def changeset(tokens, attrs) do
     tokens
-    |> cast(attrs, [:access, :refresh])
-    |> validate_required([:access, :refresh])
+    |> cast(attrs, [:access, :refresh, :provider])
+    |> validate_required([:access, :refresh, :provider])
   end
 end
+

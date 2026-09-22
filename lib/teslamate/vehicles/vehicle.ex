@@ -25,6 +25,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
               tenant_id: nil,
               task: nil,
               import?: false,
+              fleet?: false,
               stream_pid: nil
   end
 
@@ -194,7 +195,8 @@ defmodule TeslaMate.Vehicles.Vehicle do
       last_state_change: last_state_change,
       deps: deps,
       tenant_id: tenant_id,
-      import?: Keyword.get(opts, :import?, false)
+      import?: Keyword.get(opts, :import?, false),
+      fleet?: Keyword.get(opts, :fleet?, false)
     }
 
     fuses = [
@@ -1422,6 +1424,8 @@ defmodule TeslaMate.Vehicles.Vehicle do
             end)
           end)
 
+        if data.fleet?, do: Repo.rollback({:invalid_charge, errors})
+
         Logger.warning("Invalid charge data: #{inspect(errors, pretty: true)}",
           car_id: data.car.id
         )
@@ -1429,6 +1433,10 @@ defmodule TeslaMate.Vehicles.Vehicle do
       {:ok, _charge} ->
         :ok
     end
+  end
+
+  defp try_to_suspend(_vehicle, _current_state, %Data{fleet?: true} = data) do
+    {:keep_state, data, broadcast_summary()}
   end
 
   defp try_to_suspend(vehicle, current_state, %Data{car: car} = data) do
@@ -1682,6 +1690,8 @@ defmodule TeslaMate.Vehicles.Vehicle do
 
   defp streaming?(%Data{stream_pid: pid}), do: is_pid(pid) and Process.alive?(pid)
 
+  defp connect_stream(%Data{fleet?: true}), do: {:ok, nil}
+
   defp connect_stream(%Data{car: car} = data) do
     Logger.info("Stream connecting ...", car_id: car.id)
 
@@ -1756,3 +1766,4 @@ defmodule TeslaMate.Vehicles.Vehicle do
     _ -> defp diff_seconds(a, b), do: DateTime.diff(a, b, :second)
   end
 end
+

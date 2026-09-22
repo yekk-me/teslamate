@@ -62,6 +62,8 @@ defmodule TeslaMateWeb.Router do
   scope "/api/internal", TeslaMateWeb do
     pipe_through :internal_api
 
+    post "/tenants/:tenant_id/fleet/events", FleetController, :ingest
+    post "/tenants/:tenant_id/fleet/authorize", MultiTenantAuthController, :begin_fleet
     post "/tenants/:tenant_id/authorize", MultiTenantAuthController, :authorize
   end
 
@@ -73,3 +75,4 @@ defmodule TeslaMateWeb.Router do
     |> put_session(:settings, settings)
   end
 end
+

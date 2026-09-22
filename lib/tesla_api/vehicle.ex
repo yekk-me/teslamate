@@ -24,12 +24,9 @@ defmodule TeslaApi.Vehicle do
 
   def list(%Auth{} = auth) do
     endpoint_url =
-      case Auth.region(auth) do
-        :chinese -> System.get_env("TESLA_API_HOST", "https://owner-api.vn.cloud.tesla.cn")
-        _global -> System.get_env("TESLA_API_HOST", "https://owner-api.teslamotors.com")
-      end
+      endpoint_url(auth)
 
-    TeslaApi.get(endpoint_url <> "/api/1/products" <> System.get_env("TOKEN", ""),
+    TeslaApi.get(endpoint_url <> list_path(auth) <> suffix(auth),
       opts: [access_token: auth.token]
     )
     |> handle_response(transform: &list_result/1)
@@ -37,12 +34,9 @@ defmodule TeslaApi.Vehicle do
 
   def get(%Auth{} = auth, id) do
     endpoint_url =
-      case Auth.region(auth) do
-        :chinese -> System.get_env("TESLA_API_HOST", "https://owner-api.vn.cloud.tesla.cn")
-        _global -> System.get_env("TESLA_API_HOST", "https://owner-api.teslamotors.com")
-      end
+      endpoint_url(auth)
 
-    TeslaApi.get(endpoint_url <> "/api/1/vehicles/#{id}" <> System.get_env("TOKEN", ""),
+    TeslaApi.get(endpoint_url <> "/api/1/vehicles/#{id}" <> suffix(auth),
       opts: [access_token: auth.token]
     )
     |> handle_response(transform: &result/1)
@@ -50,25 +44,26 @@ defmodule TeslaApi.Vehicle do
 
   def get_with_state(%Auth{} = auth, id) do
     endpoint_url =
-      case Auth.region(auth) do
-        :chinese -> System.get_env("TESLA_API_HOST", "https://owner-api.vn.cloud.tesla.cn")
-        _global -> System.get_env("TESLA_API_HOST", "https://owner-api.teslamotors.com")
-      end
+      endpoint_url(auth)
 
     TeslaApi.get(
-      endpoint_url <> "/api/1/vehicles/#{id}/vehicle_data" <> System.get_env("TOKEN", ""),
+      endpoint_url <> "/api/1/vehicles/#{id}/vehicle_data" <> suffix(auth),
       query: [
         endpoints:
-          "charge_state;climate_state;closures_state;drive_state;gui_settings;location_data;vehicle_config;vehicle_state;vehicle_data_combo"
+          "charge_state;climate_state;closures_state;drive_state;gui_settings;location_data;vehicle_config;vehicle_state"
       ],
       opts: [access_token: auth.token]
     )
     |> handle_response(transform: &result/1)
   end
 
+  defp endpoint_url(_auth), do: TeslaApi.Fleet.api_url()
+  defp list_path(_auth), do: "/api/1/vehicles"
+  defp suffix(_auth), do: ""
+
   def list_result(result) do
     result
-    |> Enum.filter(fn x -> Map.has_key?(x, "vehicle_id") end)
+    |> Enum.filter(fn x -> Map.has_key?(x, "vehicle_id") or Map.has_key?(x, "vin") end)
     |> Enum.map(&result/1)
   end
 
@@ -144,3 +139,4 @@ defmodule TeslaApi.Vehicle do
     {:error, %Error{reason: :unknown, message: reason}}
   end
 end
+
