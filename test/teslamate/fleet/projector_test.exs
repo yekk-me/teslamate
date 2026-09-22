@@ -117,6 +117,18 @@ defmodule TeslaMate.Fleet.ProjectorTest do
     assert Repo.one!(from p in Log.Position, where: p.drive_id == ^drive.id).date == at
   end
 
+  test "unrelated signal changes do not bias driving sample averages", %{car: car, base: base} do
+    Ingest.store(car, "snapshot", snapshot(car))
+    step(base)
+    Ingest.store(car, "telemetry", record(car, 1, %{"Gear" => "ShiftStateD", "VehicleSpeed" => 30.0}))
+    step(base)
+    count = Repo.aggregate(Log.Position, :count)
+    Ingest.store(car, "telemetry", record(car, 2, %{"OutsideTemp" => 23.75, "Locked" => true}))
+    assert {:ok, {"cached", {:driving, :available, _}, data}} = step(base)
+    assert data.last_response.climate_state.outside_temp == 23.75
+    assert Repo.aggregate(Log.Position, :count) == count
+  end
+
   test "AC charge completion keeps battery energy and the original calculation", %{
     car: car,
     base: base

@@ -524,7 +524,7 @@ defmodule TeslaMateWeb.SettingsLiveTest do
       {Tesla.Adapter.Finch, [], call: fn _, _ -> {:ok, resp} end}
     end
 
-    test "informs if an update is available", %{conn: conn} do
+    test "renders fork settings when an upstream update is available", %{conn: conn} do
       with_mocks [github_mock()] do
         _pid = start_supervised!({Updater, version: "1.0.0", check_after: 0})
 
@@ -533,12 +533,11 @@ defmodule TeslaMateWeb.SettingsLiveTest do
         assert {:ok, _view, html} = live(conn, "/settings")
         html = Floki.parse_document!(html)
 
-        # This fork displays update notices in the footer; its About table contains links.
-        assert [
-                 {"a",
-                  [_, {"href", "https://github.com/teslamate-org/teslamate/releases"}, _, _, _],
-                  [_, {_, _, ["Update available: 1.1.3"]}]}
-               ] = Floki.find(html, ".footer a")
+        assert Updater.get_update() == "1.1.3"
+        # The 2.2 fork removed the upstream version row and release footer.
+        assert ["https://github.com/teslamate-org/teslamate"] ==
+                 html |> Floki.find(".about tr:first-child a") |> Floki.attribute("href")
+
       end
     end
   end

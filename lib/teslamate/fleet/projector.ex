@@ -111,10 +111,14 @@ defmodule TeslaMate.Fleet.Projector do
               _ -> :online
             end
 
-          previous = state
-          {state, data} = advance(state, data, {:update, {kind, vehicle}}, 0)
-          data = store_parked_position(previous, state, data, event.recorded_at)
-          {state, data, "projected"}
+          if log_sample?(event, state) do
+            previous = state
+            {state, data} = advance(state, data, {:update, {kind, vehicle}}, 0)
+            data = store_parked_position(previous, state, data, event.recorded_at)
+            {state, data, "projected"}
+          else
+            {state, data, "cached"}
+          end
         else
           {state, data, "incomplete"}
         end
@@ -133,6 +137,19 @@ defmodule TeslaMate.Fleet.Projector do
       Repo.update!(Ecto.Changeset.change(event, status: status))
       {status, state, data}
     end
+  end
+
+  # A temperature/lock/TPMS delta updates the cache, not the count of driving
+  # or charging samples. Otherwise unrelated signal rates bias SQL averages.
+  defp log_sample?(%Event{source: source}, _) when source != "telemetry", do: true
+  defp log_sample?(_, :start), do: true
+  defp log_sample?(event, state) do
+    fields = cond do
+      match?({:driving, _, _}, state) -> ~w(Location Odometer VehicleSpeed Gear DetailedChargeState)
+      match?({:charging, _}, state) -> ~w(DCChargingEnergyIn ACChargingPower DCChargingPower DetailedChargeState Gear BatteryLevel Soc)
+      true -> ~w(Location Gear DetailedChargeState Version CarType DCChargingEnergyIn)
+    end
+    Enum.any?(event.payload["data"], &(&1["key"] in fields))
   end
 
   defp reorder_seconds do

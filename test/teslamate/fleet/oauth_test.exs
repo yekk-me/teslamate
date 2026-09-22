@@ -34,7 +34,9 @@ defmodule TeslaMate.Fleet.OAuthTest do
 
     Repo.update_all(
       from(s in "fleet_oauth_states"),
-      [set: [expires_at: ~U[2000-01-01 00:00:00.000000Z]]], prefix: "private")
+      [set: [expires_at: ~U[2000-01-01 00:00:00.000000Z]]],
+      prefix: "private"
+    )
 
     assert {:error, :invalid_oauth_state} = OAuth.consume(nil, other)
   end

@@ -554,8 +554,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
       when s in [nil, "P"] and is_number(power) and power < 0 ->
         Logger.info("Suspended / Charging detected: #{power} kW", car_id: data.car.id)
 
-        {:next_state, prev_state, %Data{data | last_used: clock_now()},
-         schedule_fetch(0, data)}
+        {:next_state, prev_state, %Data{data | last_used: clock_now()}, schedule_fetch(0, data)}
 
       %Stream.Data{shift_state: s, power: power}
       when s in [nil, "P"] and is_number(power) and power > 0 ->
@@ -564,8 +563,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
         # update power to be used in can_fall_asleep / try_to_suspend
         vehicle = merge(data.last_response, stream_data, time: true)
 
-        {:next_state, prev_state,
-         %Data{data | last_response: vehicle, last_used: clock_now()},
+        {:next_state, prev_state, %Data{data | last_response: vehicle, last_used: clock_now()},
          schedule_fetch(0, data)}
 
       %Stream.Data{} ->
@@ -998,14 +996,14 @@ defmodule TeslaMate.Vehicles.Vehicle do
   def handle_event(:internal, {:update, {:offline, _}}, {:driving, :available, drive}, data) do
     Logger.warning("Vehicle went offline while driving", car_id: data.car.id)
 
-    {:next_state, {:driving, {:unavailable, 0}, drive},
-     %Data{data | last_used: clock_now()}, schedule_fetch(5, data)}
+    {:next_state, {:driving, {:unavailable, 0}, drive}, %Data{data | last_used: clock_now()},
+     schedule_fetch(5, data)}
   end
 
   def handle_event(:internal, {:update, {:offline, _}}, {:driving, {:unavailable, n}, drv}, data)
       when n < 15 do
-    {:next_state, {:driving, {:unavailable, n + 1}, drv},
-     %Data{data | last_used: clock_now()}, schedule_fetch(5, data)}
+    {:next_state, {:driving, {:unavailable, n + 1}, drv}, %Data{data | last_used: clock_now()},
+     schedule_fetch(5, data)}
   end
 
   def handle_event(:internal, {:update, {:offline, _}}, {:driving, {:unavailable, _n}, drv}, data) do
@@ -1024,8 +1022,7 @@ defmodule TeslaMate.Vehicles.Vehicle do
       min when min >= @drive_timeout_min ->
         timeout_drive(drive, data)
 
-        {:next_state, {:driving, {:offline, last}, nil},
-         %Data{data | last_used: clock_now()},
+        {:next_state, {:driving, {:offline, last}, nil}, %Data{data | last_used: clock_now()},
          [broadcast_summary(), schedule_fetch(30, data)]}
 
       _min ->
@@ -1056,7 +1053,10 @@ defmodule TeslaMate.Vehicles.Vehicle do
                 data.car,
                 create_position(last, data),
                 [lookup_address: !data.import?] ++
-                  if(data.fleet?, do: [date: parse_timestamp(last.drive_state.timestamp)], else: [])
+                  if(data.fleet?,
+                    do: [date: parse_timestamp(last.drive_state.timestamp)],
+                    else: []
+                  )
               ])
 
             :ok = insert_charge(cproc, put_charge_defaults(last), data)
@@ -1223,14 +1223,14 @@ defmodule TeslaMate.Vehicles.Vehicle do
 
   def handle_event(:internal, {:update, {:online, _}} = event, {state, _interval}, data)
       when state in [:asleep, :offline] do
-    {:next_state, :start, %Data{data | last_used: clock_now()},
-     {:next_event, :internal, event}}
+    {:next_state, :start, %Data{data | last_used: clock_now()}, {:next_event, :internal, event}}
   end
 
   @doc false
   def with_event_time(%DateTime{} = at, fun) when is_function(fun, 0) do
     key = {__MODULE__, :fleet_event_time}
     previous = Process.put(key, at)
+
     try do
       fun.()
     after

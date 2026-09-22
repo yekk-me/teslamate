@@ -37,7 +37,7 @@ defmodule TeslaMate.Fleet.Worker do
     s =
       Enum.reduce_while(1..100, s, fn _, s ->
         case Projector.step(s.base) do
-          {:ok, {"projected", state, data}} ->
+          {:ok, {status, state, data}} when status in ["projected", "cached"] ->
             {:cont, %{s | state: state, data: data, healthy?: true}}
 
           {:ok, :empty} ->
