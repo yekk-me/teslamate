@@ -1,5 +1,6 @@
 defmodule TeslaApi.Auth do
   @moduledoc "China Fleet credentials. Owner API credentials must be reauthorized."
+  @derive {Inspect, except: [:token, :refresh_token]}
   defstruct [:token, :type, :expires_in, :refresh_token, :created_at, provider: "fleet_cn"]
 
   defdelegate exchange_code(code, opts \\ []), to: TeslaApi.Fleet

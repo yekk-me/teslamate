@@ -101,6 +101,17 @@ defmodule TeslaMate.Fleet.ProjectorTest do
     assert Repo.aggregate(Log.Charge, :count) == 3
   end
 
+  test "another tenant cannot route an assigned vehicle into this database", %{car: car} do
+    if is_nil(Process.whereis(TeslaMate.MultiTenant.Registry)) do
+      start_supervised!({Registry, keys: :unique, name: TeslaMate.MultiTenant.Registry})
+    end
+    tenant = %TeslaMate.MultiTenant.Tenant{id: "fleet-other-tenant", database: nil,
+      vehicles: [%TeslaMate.MultiTenant.Tenant.Vehicle{id: "other", vin: "OTHER-VIN", status: "active"}]}
+    start_supervised!({TeslaMate.MultiTenant.TenantState, tenant: tenant})
+    assert {:error, :vehicle_not_assigned} = Ingest.ingest(tenant.id, record(car, 0, %{"Gear" => "ShiftStateD"}))
+    assert Repo.aggregate(Event, :count) == 0
+  end
+
   test "malformed and cross-VIN payloads are rejected before persistence", %{car: car} do
     r = record(car, 0, %{"Gear" => "ShiftStateP"})
 

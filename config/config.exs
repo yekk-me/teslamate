@@ -28,7 +28,14 @@ config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
 
 import_config "#{config_env()}.exs"
 
-
 # OAuth codes, raw vehicle locations and tokens must not appear in request logs.
-config :phoenix, :filter_parameters,
-  ["password", "token", "access_token", "refresh_token", "code", "state", "record", "client_secret"]
+config :phoenix, :filter_parameters, [
+  "password",
+  "token",
+  "access_token",
+  "refresh_token",
+  "code",
+  "state",
+  "record",
+  "client_secret"
+]

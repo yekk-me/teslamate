@@ -76,4 +76,3 @@ defmodule TeslaMateWeb.Router do
     |> put_session(:settings, settings)
   end
 end
-

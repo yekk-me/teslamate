@@ -185,14 +185,8 @@ defmodule TeslaMate.Api do
   end
 
   @impl true
-  def handle_call({:sign_in, args}, _, %State{} = state) do
-    case args do
-      [args, callback] when is_function(callback) ->
-        apply(callback, args)
-
-      [%Tokens{} = t] ->
-        Auth.refresh(%Auth{token: t.access, refresh_token: t.refresh, provider: t.provider})
-    end
+  def handle_call({:sign_in, [%Tokens{} = tokens]}, _, %State{} = state) do
+    Auth.refresh(%Auth{token: tokens.access, refresh_token: tokens.refresh, provider: tokens.provider})
     |> case do
       {:ok, %Auth{} = auth} ->
         :ok = call(state.deps.auth, :save, [auth])
@@ -203,20 +197,6 @@ defmodule TeslaMate.Api do
         :ok = :fuse.reset(fuse_name(state.name))
 
         {:reply, :ok, state}
-
-      {:ok, {:captcha, captcha, callback}} ->
-        wrapped_callback = fn captcha_code ->
-          GenServer.call(state.name, {:sign_in, [[captcha_code], callback]}, @timeout)
-        end
-
-        {:reply, {:ok, {:captcha, captcha, wrapped_callback}}, state}
-
-      {:ok, {:mfa, devices, callback}} ->
-        wrapped_callback = fn device_id, mfa_passcode ->
-          GenServer.call(state.name, {:sign_in, [[device_id, mfa_passcode], callback]}, @timeout)
-        end
-
-        {:reply, {:ok, {:mfa, devices, wrapped_callback}}, state}
 
       {:error, reason} ->
         {:reply, {:error, reason}, state}
@@ -318,7 +298,11 @@ defmodule TeslaMate.Api do
     _ in ArgumentError -> {:error, :not_signed_in}
   end
 
-  defp fetch_auth(name), do: GenServer.call(name, :fetch_auth)
+  defp fetch_auth(name) do
+    GenServer.call(name, :fetch_auth)
+  catch
+    :exit, {:noproc, _} -> {:error, :not_signed_in}
+  end
 
   defp handle_result(result, auth, name, tenant_id) do
     case result do

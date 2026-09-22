@@ -28,6 +28,7 @@ jobs:
           otp-version: '28'
           elixir-version: '1.19.5'
       - uses: actions/cache@v4
+        id: beam-cache
         with:
           path: |
             deps
@@ -40,5 +41,15 @@ jobs:
           git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format
           git diff -- "*.ex" "*.exs" | gzip | base64 -w0
       - run: mix compile
+      - name: Fleet database and OAuth regression
+        run: mix test test/tesla_api test/teslamate/fleet
       - run: mix test
       - run: python3 -m unittest discover -s tools/fleet/tests -v
+        if: always()
+      - uses: actions/cache/save@v4
+        if: always() && steps.beam-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            deps
+            _build/test
+          key: fleet-${{ runner.os }}-${{ hashFiles('mix.lock') }}

@@ -67,6 +67,7 @@ defmodule TeslaMate.Fleet.Ingest do
   def store(_, _, _), do: {:error, :invalid_payload}
 
   defp persist(car, source, at, payload, identity) do
+    at = DateTime.from_unix!(DateTime.to_unix(at, :microsecond), :microsecond)
     key =
       :crypto.hash(:sha256, :erlang.term_to_binary({source, canonical(identity)}))
       |> Base.encode16(case: :lower)

@@ -8,3 +8,7 @@ config :teslamate, TeslaMateWeb.Endpoint, server: false
 config :teslamate, TeslaMate.Repo, pool: Ecto.Adapters.SQL.Sandbox
 
 config :phoenix, :plug_init_mode, :runtime
+
+
+# UI fixtures use English; production remains configured for Chinese.
+config :gettext, :default_locale, "en"

@@ -347,7 +347,7 @@ defmodule TeslaMate.Vehicles.VehicleTest do
             assert %Summary{state: :asleep, healthy: true, car: %Car{id: id}} =
                      Vehicle.summary(name)
 
-            :"#{Vehicle}_#{id}_api_error"
+            :"#{Vehicle}_single_#{id}_api_error"
           end,
           delay: 10
         )
@@ -496,3 +496,4 @@ defmodule TeslaMate.Vehicles.VehicleTest do
     end
   end
 end
+

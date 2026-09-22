@@ -57,7 +57,7 @@ defmodule TeslaMate.Fleet.Projector do
         )
 
       if event && DateTime.compare(event.received_at, cutoff) != :gt,
-        do: project(event, checkpoint, base),
+        do: Vehicle.with_event_time(event.recorded_at, fn -> project(event, checkpoint, base) end),
         else: :empty
     end)
   end
