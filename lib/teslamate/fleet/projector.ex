@@ -59,7 +59,8 @@ defmodule TeslaMate.Fleet.Projector do
         )
 
       if event && DateTime.compare(event.received_at, cutoff) != :gt,
-        do: Vehicle.with_event_time(event.recorded_at, fn -> project(event, checkpoint, base) end),
+        do:
+          Vehicle.with_event_time(event.recorded_at, fn -> project(event, checkpoint, base) end),
         else: :empty
     end)
   end
@@ -95,13 +96,19 @@ defmodule TeslaMate.Fleet.Projector do
               },
               else: vehicle
 
-          vehicle = if event.source == "telemetry" do
-            Enum.reduce([:drive_state, :charge_state, :climate_state, :vehicle_state], vehicle, fn group, v ->
-              Map.update!(v, group, &Map.put(&1, :timestamp, event.recorded_at))
-            end)
-          else
-            vehicle
-          end
+          vehicle =
+            if event.source == "telemetry" do
+              Enum.reduce(
+                [:drive_state, :charge_state, :climate_state, :vehicle_state],
+                vehicle,
+                fn group, v ->
+                  Map.update!(v, group, &Map.put(&1, :timestamp, event.recorded_at))
+                end
+              )
+            else
+              vehicle
+            end
+
           data = %{data | last_response: vehicle, last_used: event.recorded_at}
 
           kind =
@@ -143,12 +150,20 @@ defmodule TeslaMate.Fleet.Projector do
   # or charging samples. Otherwise unrelated signal rates bias SQL averages.
   defp log_sample?(%Event{source: source}, _) when source != "telemetry", do: true
   defp log_sample?(_, :start), do: true
+
   defp log_sample?(event, state) do
-    fields = cond do
-      match?({:driving, _, _}, state) -> ~w(Location Odometer VehicleSpeed Gear DetailedChargeState)
-      match?({:charging, _}, state) -> ~w(DCChargingEnergyIn ACChargingPower DCChargingPower DetailedChargeState Gear BatteryLevel Soc)
-      true -> ~w(Location Gear DetailedChargeState Version CarType DCChargingEnergyIn)
-    end
+    fields =
+      cond do
+        match?({:driving, _, _}, state) ->
+          ~w(Location Odometer VehicleSpeed Gear DetailedChargeState)
+
+        match?({:charging, _}, state) ->
+          ~w(DCChargingEnergyIn ACChargingPower DCChargingPower DetailedChargeState Gear BatteryLevel Soc)
+
+        true ->
+          ~w(Location Gear DetailedChargeState Version CarType DCChargingEnergyIn)
+      end
+
     Enum.any?(event.payload["data"], &(&1["key"] in fields))
   end
 

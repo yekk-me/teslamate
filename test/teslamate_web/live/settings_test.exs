@@ -537,7 +537,6 @@ defmodule TeslaMateWeb.SettingsLiveTest do
         # The 2.2 fork removed the upstream version row and release footer.
         assert ["https://github.com/teslamate-org/teslamate"] ==
                  html |> Floki.find(".about tr:first-child a") |> Floki.attribute("href")
-
       end
     end
   end
@@ -560,4 +559,3 @@ defmodule TeslaMateWeb.SettingsLiveTest do
     end
   end
 end
-

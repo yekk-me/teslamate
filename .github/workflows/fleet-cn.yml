@@ -36,10 +36,9 @@ jobs:
           key: fleet-${{ runner.os }}-${{ hashFiles('mix.lock') }}
       # This branch already has Elixir 1.19 struct typing warnings; preserve logs.
       - run: mix deps.get
-      - name: Format changed Elixir files
+      - name: Check changed Elixir formatting
         run: |
-          git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format
-          git diff -- "*.ex" "*.exs" | gzip | base64 -w0
+          git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format --check-formatted
       - run: mix compile
       - name: Fleet database and OAuth regression
         run: mix test test/tesla_api test/teslamate/fleet
