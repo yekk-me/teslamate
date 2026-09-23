@@ -359,9 +359,13 @@ defmodule TeslaMate.Log do
           end
 
         attrs =
-          attrs
-          |> put_geofence(:start_geofence_id, start_pos)
-          |> put_geofence(:end_geofence_id, end_pos)
+          if Keyword.get(opts, :preserve_geofences, false) do
+            attrs
+          else
+            attrs
+            |> put_geofence(:start_geofence_id, start_pos)
+            |> put_geofence(:end_geofence_id, end_pos)
+          end
 
         drive
         |> Drive.changeset(attrs)

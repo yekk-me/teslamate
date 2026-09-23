@@ -1355,6 +1355,10 @@ defmodule TeslaMate.Vehicles.Vehicle do
               _ -> Terrain
             end)
 
+  @doc false
+  def fleet_position_attrs(%Vehicle{} = vehicle, %Data{fleet?: true} = data),
+    do: create_position(vehicle, data)
+
   defp create_position(%Vehicle{} = vehicle, %Data{car: car, fleet?: fleet?}) do
     position = %{
       date: parse_timestamp(vehicle.drive_state.timestamp),

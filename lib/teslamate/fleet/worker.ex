@@ -21,6 +21,7 @@ defmodule TeslaMate.Fleet.Worker do
     {state, data} = Projector.restore(base)
     send(self(), :poll)
     send(self(), :drain)
+    Process.send_after(self(), :repair_late, 60_000)
     {:ok, %{base: base, data: data, state: state, task: nil, healthy?: false}}
   end
 
@@ -39,6 +40,9 @@ defmodule TeslaMate.Fleet.Worker do
         case Projector.step(s.base) do
           {:ok, {status, state, data}} when status in ["projected", "cached"] ->
             {:cont, %{s | state: state, data: data, healthy?: true}}
+
+          {:ok, :repaired} ->
+            {:cont, s}
 
           {:ok, :empty} ->
             {:halt, s}
@@ -62,6 +66,12 @@ defmodule TeslaMate.Fleet.Worker do
     )
 
     Process.send_after(self(), :drain, 1000)
+    {:noreply, s}
+  end
+
+  def handle_info(:repair_late, s) do
+    TeslaMate.Fleet.LateRepair.retry(s.base)
+    Process.send_after(self(), :repair_late, 60_000)
     {:noreply, s}
   end
 

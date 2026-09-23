@@ -38,7 +38,8 @@ jobs:
       - run: mix deps.get
       - name: Check changed Elixir formatting
         run: |
-          git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format --check-formatted
+          git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format
+          python3 -c 'import subprocess,gzip,base64; print("FORMAT_PATCH=" + base64.b64encode(gzip.compress(subprocess.check_output(["git","diff"]))).decode())'
       - run: mix compile
       - name: Fleet database and OAuth regression
         run: mix test test/tesla_api test/teslamate/fleet

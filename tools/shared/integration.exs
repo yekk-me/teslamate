@@ -69,6 +69,12 @@ for {schema, vin} <- [
     true = drive.start_date == ~U[2026-01-01 00:00:01.000000Z]
     true = drive.end_date == ~U[2026-01-01 00:02:01.000000Z]
     true = Repo.aggregate(Event, :count) == 4
+    {:ok, :stored} = Ingest.ingest(schema, record(car, 31, %{"Odometer" => 10000.623456}))
+    {:ok, :repaired} = Projector.step(base, reorder_seconds: 0)
+    [repair] = Repo.all(TeslaMate.Fleet.Repair)
+    true = repair.id == 1 and repair.drive_id == 1
+    true = Repo.get!(Log.Position, repair.position_id).car_id == car.id
+    true = Repo.get!(Log.Drive, drive.id).distance == drive.distance
     [stored] = Repo.all(Log.Car)
     true = stored.vin == vin
     {:online, _} = Projector.restore(base)

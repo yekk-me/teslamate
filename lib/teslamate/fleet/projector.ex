@@ -68,10 +68,7 @@ defmodule TeslaMate.Fleet.Projector do
   defp project(event, checkpoint, base) do
     if checkpoint.recorded_at &&
          DateTime.compare(event.recorded_at, checkpoint.recorded_at) == :lt do
-      # Never overwrite newer values or attach an old sample to the current drive.
-      # Retain the complete original event for explicit offline replay/reconciliation.
-      Repo.update!(Ecto.Changeset.change(event, status: "late", error: "older_than_checkpoint"))
-      :late
+      TeslaMate.Fleet.LateRepair.attempt(event, checkpoint, base)
     else
       snapshot =
         case event.source do

@@ -24,3 +24,15 @@ defmodule TeslaMate.Fleet.Checkpoint do
     field :updated_at, :utc_datetime_usec
   end
 end
+
+defmodule TeslaMate.Fleet.Repair do
+  use Ecto.Schema
+  schema "fleet_repairs" do
+    belongs_to :event, TeslaMate.Fleet.Event
+    belongs_to :drive, TeslaMate.Log.Drive
+    belongs_to :position, TeslaMate.Log.Position
+    field :before_metrics, :map
+    field :after_metrics, :map
+    field :inserted_at, :utc_datetime_usec
+  end
+end
