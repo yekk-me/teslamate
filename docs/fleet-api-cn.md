@@ -66,7 +66,7 @@ TESLA_FLEET_REORDER_SECONDS=10
 10. 优先使用 `onboard.py configure`，由服务端读取租户令牌完成配置。独立调试也可使用该用户的官方 Fleet access token 文件设置 `TESLA_FLEET_ACCESS_TOKEN_FILE`，并设置可信的 `TESLA_FLEET_COMMAND_PROXY=https://...`；自签代理证书用 `TESLA_FLEET_PROXY_CA_FILE` 指定信任 CA。复制 vehicle-config 示例并填写接收器主机名与完整 PEM 证书链。串行运行 `python3 tools/fleet/provision.py configure VIN vehicle-config.json`，然后 `python3 tools/fleet/provision.py status VIN`。必须检查 skipped_vehicles 及 `synced=true`，不能把 HTTP 200 当作车辆已配置成功。
 11. 完成字段验证后，在车辆停放且未充电时把 `TESLA_FLEET_TELEMETRY` 改为 true 并重启租户运行时。先迁移数据库，再启动新代码；不要在进行中的行程/充电过程中切换记录器。
 
-桥接消费进度只在目标租户全部返回 `stored` 或 `duplicate` 后同步提交。请求超时、租户不可用、未知 VIN、路由错误会退出等待监督器重试，不跳过数据；修正路由后重启即可。更新 routes 后需重启 bridge。Kafka 保留期应覆盖最长预期停机，数据库与 Kafka 均需备份。
+桥接消费进度只在目标租户全部返回 `stored` 或 `duplicate` 后同步提交。请求超时、租户不可用、未知 VIN、路由错误会退出等待监督器重试，不跳过数据；修正路由后重启即可。bridge 每条消息重新读取 routes，更新后不需要重启。Kafka 保留期应覆盖最长预期停机，数据库与 Kafka 均需备份。
 
 ## 字段与精度
 
@@ -116,3 +116,36 @@ python3 -m unittest discover -s tools/fleet/tests -v
 - [官方接收器与 Kafka 可靠确认](https://github.com/teslamotors/fleet-telemetry)
 
 TeslaMate 指南中较旧的推送频率描述与当前 Tesla 文档存在差别；采样和字段含义以特斯拉当前文档及车辆实际固件为准。
+
+## 超出重排窗口的迟到样本（共享分支）
+
+`codex/shared-db-fleet` 增加 `fleet_repairs` 审计表，不修改原业务表字段。
+满足以下条件的驾驶样本自动补入原 `positions`，沿用原 `close_drive` 重算派生指标：
+
+- 时间严格位于唯一一条已结束行程内部，且没有同时间事件/位置冲突。
+- 24 小时内有已处理的 Fleet REST 基准，最多重放 5,000 条原始事件可恢复当时状态；中间无未处理/无法处理的事件。
+- 信号只涉及允许的驾驶位置/车况字段，不能改变挡位或会话边界。
+- 紧随其后的已处理事件覆盖本次变化，证明无需重写后续采样。
+- 里程位于相邻点之间，行程 ID、起止时间、起止位置 ID 保持不变。
+
+插入位置、重算行程、写入修改前后审计、将事件标记为 `repaired` 在同一事务中完成，失败全部回滚。实时 checkpoint 不后退；地址和围栏不重新解析。车辆尚在行驶时符合其他条件的样本先等待，每 60 秒最多检查 10 条，结束后再补录。重复投递不重复插入。
+
+不满足条件的样本仍完整保留为 `late`，`error` 给出 `repair_*` 原因。换挡/充电边界、依赖链跨越后续样本、缺少快照或原始数据等情况尚不支持通用自动重建，不能宣称全部迟到数据都已恢复。
+
+API 共享分支每分钟从持久化审计中最多读取 20 条待刷新记录，重算驾驶诊断和分钟轨迹；全部成功才写 `mytesla_fleet_repair_progress`。失败或 API 重启会重试，用户分类/备注/通勤路线 ID 保留，不触发行程完成通知。这些 API 派生数据与补录最终一致，正常最多约一分钟、积压或错误时更久。
+
+排查时在正确租户角色/search_path 下执行只读查询：
+
+```sql
+SELECT car_id, status, error, count(*) FROM fleet_events GROUP BY 1,2,3;
+SELECT id, event_id, drive_id, position_id, before_metrics, after_metrics FROM fleet_repairs ORDER BY id DESC LIMIT 20;
+SELECT r.id, r.drive_id FROM fleet_repairs r
+LEFT JOIN mytesla_fleet_repair_progress p ON p.repair_id = r.id
+WHERE r.drive_id IS NOT NULL AND p.repair_id IS NULL;
+```
+
+## 缺失功率与 API 空值
+
+遥测没有直接等价的原行驶功率时，`positions.power` 保持 NULL；不以电池电压乘电流替代电机/旧接口功率。API 行程列表、最新行程和详情的 `power_max`/`power_min`、详情点 `power` 返回 JSON null，避免 NULL 扫描错误或伪装成零。Mytess 对应 Swift 字段已经是 Optional。
+
+`regeneration_kwh` 仅在至少两个样本、功率全覆盖、相邻时间间隔均大于 0 且小于原积分阈值 1.5 秒时计算；缺失或稀疏返回 null，真实完整零功率才返回 0。积分使用完整相邻时间的 epoch 秒，不把跨分钟间隔错误截断。此处保持原矩形积分口径，不表示物理测量精度超出原采样。基于续航差的既有能耗估算继续保留其原含义。升级前已保存的 API 诊断不会无提示全量改写；新增与补录重算采用新空值规则。

@@ -27,6 +27,7 @@ end
 
 defmodule TeslaMate.Fleet.Repair do
   use Ecto.Schema
+
   schema "fleet_repairs" do
     belongs_to :event, TeslaMate.Fleet.Event
     belongs_to :drive, TeslaMate.Log.Drive

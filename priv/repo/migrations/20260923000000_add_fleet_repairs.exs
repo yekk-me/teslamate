@@ -10,6 +10,7 @@ defmodule TeslaMate.Repo.Migrations.AddFleetRepairs do
       add :after_metrics, :map, null: false
       add :inserted_at, :utc_datetime_usec, null: false
     end
+
     create unique_index(:fleet_repairs, [:event_id])
     create index(:fleet_events, [:car_id, :recorded_at, :id])
   end
