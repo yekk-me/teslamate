@@ -36,12 +36,6 @@ jobs:
           key: fleet-${{ runner.os }}-${{ hashFiles('mix.lock') }}
       # This branch already has Elixir 1.19 struct typing warnings; preserve logs.
       - run: mix deps.get
-      - name: Format new integration fixture
-        run: |
-          mix format tools/shared/integration.exs
-          echo SHARED_FIXTURE_FORMAT
-          git diff -- tools/shared/integration.exs | gzip | base64 -w0
-          echo
       - name: Check changed Elixir formatting
         run: |
           git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format --check-formatted
@@ -203,7 +197,7 @@ jobs:
       - name: Start the shared release and query its tenant database
         run: |
           cat > "$RUNNER_TEMP/tenants.json" <<'JSON'
-          {"tenants":[{"id":"release","status":"active","database":{"host":"127.0.0.1","port":5432,"username":"shared_runtime","password":"isolated-runtime-password","name":"shared_release_ci","schema":"tenant_release"},"mqtt":{"disabled":true},"vehicles":[]}]}
+          {"tenants":[{"id":"release","status":"active","database":{"host":"127.0.0.1","port":5432,"username":"shared_runtime","password":"isolated-runtime-password","name":"shared_release_ci","schema":"tenant_release"},"mqtt":{"disabled":true,"namespace":"release"},"vehicles":[]}]}
           JSON
           chmod 644 "$RUNNER_TEMP/tenants.json"
           docker run -d --name shared-release --network host --env-file "$RUNNER_TEMP/release.env" \

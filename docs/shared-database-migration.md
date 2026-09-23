@@ -5,7 +5,7 @@
 ## 复制
 
 1. 完整备份车辆源库、控制面数据库、原租户分配和 API 通知配置。记下原 node ID、数据库连接、加密密钥和镜像版本。测试恢复备份。
-2. 进入维护窗口，停止原租户记录器和 API 的全部写入。暂停相关 Fleet bridge 消费以让 Kafka 保留消息，不要用租户撤销 tombstone 代替迁移暂停（撤销表示可丢弃后续消息）。停止源节点的所有自动重建/续费同步任务，避免切换期间重新启动旧写入端。
+2. 进入维护窗口，先暂停相关 Fleet bridge 消费以让 Kafka 保留消息，再停止原租户记录器和 API 的全部写入，不要用租户撤销 tombstone 代替迁移暂停（撤销表示可丢弃后续消息）。停止源节点的所有自动重建/续费同步任务，避免切换期间重新启动旧写入端。
 3. 通过受保护的环境文件/交互方式设置 `SOURCE_DATABASE_URL` 与 `SHARED_ADMIN_DATABASE_URL`；后者需要临时创建 staging 数据库和角色的管理员权限。不要把 DSN 放进命令参数或 Git。
 4. 执行：
 
@@ -41,7 +41,7 @@ psql -X -v ON_ERROR_STOP=1 \
 
 将原 API 通知配置目录复制到共享 API `NOTIFICATION_CONFIG_DIR/<schema>`，保留设备/订阅配置，设置 UID/GID 10001 可读写；不要同时运行旧 API 通知任务。恢复控制/agent 后执行节点重新同步，它会为复制的 schema 补齐分支新增迁移并导出 API/VIN 路由。确认 schema 与复制报告一致，再通过管理端恢复租户。
 
-如果旧数据只有 Owner token，Fleet provider 检查会拒绝使用它；必须在 Mytess App 重新完成官方 OAuth。令牌密钥不同也应重新授权，不能把解密失败当作没有车辆。完成虚拟钥匙和 Telemetry 配置后恢复 bridge 消费。原数据库继续保留为只读备份。
+如果旧数据只有 Owner token，Fleet provider 检查会拒绝使用它；必须在 Mytess App 重新完成官方 OAuth。如果旧库密钥与共享节点不同，完成复制验证和备份后，在仍暂停的目的 schema 中清空该租户私有 `tokens` 表，再重新授权；不要触碰源库或历史记录表。这样避免新节点读取无法解密的旧令牌。不能把解密失败当作没有车辆。完成虚拟钥匙和 Telemetry 配置后恢复 bridge 消费。原数据库继续保留为只读备份。
 
 ## 核验与回滚
 
