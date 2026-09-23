@@ -27,7 +27,7 @@ defmodule TeslaMate.Auth do
   end
 
   def get_tokens do
-    case Repo.all(Tokens) do
+    case Repo.all(from(t in Tokens, prefix: ^TeslaMate.MultiTenant.SharedDatabase.private_prefix())) do
       [%Tokens{} = tokens] ->
         tokens
 
@@ -60,12 +60,12 @@ defmodule TeslaMate.Auth do
   defp create_tokens(attrs) do
     %Tokens{}
     |> Tokens.changeset(attrs)
-    |> Repo.insert()
+    |> Repo.insert(prefix: TeslaMate.MultiTenant.SharedDatabase.private_prefix())
   end
 
   defp update_tokens(%Tokens{} = tokens, attrs) do
     tokens
     |> Tokens.changeset(attrs)
-    |> Repo.update()
+    |> Repo.update(prefix: TeslaMate.MultiTenant.SharedDatabase.private_prefix())
   end
 end

@@ -1,12 +1,14 @@
 defmodule TeslaMate.Repo.Migrations.AddFleetIngestion do
   use Ecto.Migration
 
+  defp private_prefix, do: if(prefix() in [nil, "public"], do: "private", else: prefix() <> "_private")
+
   def change do
-    alter table(:tokens, prefix: "private") do
+    alter table(:tokens, prefix: private_prefix()) do
       add :provider, :text, null: false, default: "owner"
     end
 
-    create table(:fleet_oauth_states, primary_key: false, prefix: "private") do
+    create table(:fleet_oauth_states, primary_key: false, prefix: private_prefix()) do
       add :digest, :binary, primary_key: true
       add :expires_at, :utc_datetime_usec, null: false
     end

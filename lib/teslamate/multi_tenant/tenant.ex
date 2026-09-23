@@ -105,6 +105,7 @@ defmodule TeslaMate.MultiTenant.Tenant.Database do
 
   @enforce_keys [:name]
   defstruct [
+    :schema,
     :host,
     :port,
     :username,
@@ -128,9 +129,11 @@ defmodule TeslaMate.MultiTenant.Tenant.Database do
          pooler =
            string_or_nil(Map.get(attrs, "pooler")) ||
              TeslaMate.MultiTenant.tenant_database_pooler(),
-         {:ok, prepare} <- prepare_mode(Map.get(attrs, "prepare"), pooler) do
+         {:ok, prepare} <- prepare_mode(Map.get(attrs, "prepare"), pooler),
+         :ok <- validate_schema(Map.get(attrs, "schema")) do
       {:ok,
        %__MODULE__{
+         schema: Map.get(attrs, "schema"),
          host: host,
          port: int_or_nil(Map.get(attrs, "port")) || 5432,
          username: username,
@@ -144,6 +147,11 @@ defmodule TeslaMate.MultiTenant.Tenant.Database do
          prepare: prepare
        }}
     end
+  end
+
+  defp validate_schema(nil), do: :ok
+  defp validate_schema(schema) do
+    if TeslaMate.MultiTenant.SharedDatabase.valid_schema?(schema), do: :ok, else: {:error, :invalid_database_schema}
   end
 
   def new(_attrs), do: {:error, :invalid_database}
@@ -384,3 +392,4 @@ defmodule TeslaMate.MultiTenant.Tenant.Vehicle do
   defp string_or_nil(value) when is_integer(value), do: Integer.to_string(value)
   defp string_or_nil(_value), do: nil
 end
+

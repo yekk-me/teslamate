@@ -33,6 +33,9 @@ defmodule TeslaMate.MultiTenant.TenantContext do
   end
 
   def repo_pid!(tenant_id) when is_binary(tenant_id) do
+    if TeslaMate.MultiTenant.SharedDatabase.enabled?() do
+      Process.whereis(TeslaMate.Repo) || raise "shared repo is not running"
+    else
     case Registry.lookup(TeslaMate.MultiTenant.Registry, {:repo, tenant_id}) do
       [{pid, _value}] ->
         pid
@@ -40,6 +43,8 @@ defmodule TeslaMate.MultiTenant.TenantContext do
       [] ->
         raise "tenant repo is not running for #{inspect(tenant_id)}"
     end
+  end
+
   end
 
   def repo_name(tenant_id), do: TenantSupervisor.repo_name(tenant_id)
@@ -54,3 +59,4 @@ defmodule TeslaMate.MultiTenant.TenantContext do
     TeslaMate.Repo.put_dynamic_repo(previous_repo)
   end
 end
+

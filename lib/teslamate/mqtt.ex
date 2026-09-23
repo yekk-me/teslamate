@@ -31,13 +31,15 @@ defmodule TeslaMate.Mqtt do
 
   @impl true
   def init(opts) do
-    client_id = generate_client_id()
+    shared? = TeslaMate.MultiTenant.SharedDatabase.enabled?()
+    client_id = if shared?, do: shared_client_id(), else: generate_client_id()
+    if shared?, do: validate_shared_broker!(opts)
     publisher_name = Keyword.get(opts, :publisher_name, Publisher)
     pubsub_name = Keyword.get(opts, :pubsub_name, PubSub)
     tenant_id = Keyword.get(opts, :tenant_id)
 
     children = [
-      {Tortoise311.Connection, connection_config(opts) ++ [client_id: client_id]},
+      if(not shared?, do: {Tortoise311.Connection, connection_config(opts) ++ [client_id: client_id]}),
       {Publisher, client_id: client_id, name: publisher_name, tenant_id: tenant_id},
       {PubSub,
        namespace: opts[:namespace],
@@ -47,7 +49,23 @@ defmodule TeslaMate.Mqtt do
        car_ids: Keyword.get(opts, :car_ids)}
     ]
 
-    Supervisor.init(children, strategy: :one_for_one)
+    Supervisor.init(Enum.reject(children, &is_nil/1), strategy: :one_for_one)
+  end
+
+  def shared_child_spec do
+    opts = Application.fetch_env!(:teslamate, :mqtt)
+    {Tortoise311.Connection, connection_config(opts) ++ [client_id: shared_client_id()]}
+  end
+
+  defp shared_client_id, do: "TESLAMATE_SHARED_" <> TeslaMate.MultiTenant.node_id()
+
+  defp validate_shared_broker!(opts) do
+    shared = Application.fetch_env!(:teslamate, :mqtt)
+    for key <- [:host, :username, :password, :tls] do
+      unless opts[key] == shared[key], do: raise("tenant MQTT broker differs from shared broker")
+    end
+    default = if opts[:tls], do: 8883, else: 1883
+    unless (opts[:port] || default) == (shared[:port] || default), do: raise("tenant MQTT port differs from shared broker")
   end
 
   # Private
@@ -90,3 +108,4 @@ defmodule TeslaMate.Mqtt do
     "TESLAMATE_" <> (:rand.uniform() |> to_string() |> Base.encode16() |> String.slice(0..10))
   end
 end
+

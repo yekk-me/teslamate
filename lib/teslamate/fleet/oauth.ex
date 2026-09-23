@@ -12,13 +12,13 @@ defmodule TeslaMate.Fleet.OAuth do
         now = DateTime.utc_now()
 
         Repo.delete_all(from(s in "fleet_oauth_states", where: s.expires_at < ^now),
-          prefix: "private"
+          prefix: TeslaMate.MultiTenant.SharedDatabase.private_prefix()
         )
 
         Repo.insert_all(
           "fleet_oauth_states",
           [%{digest: digest(state), expires_at: DateTime.add(now, 600, :second)}],
-          prefix: "private"
+          prefix: TeslaMate.MultiTenant.SharedDatabase.private_prefix()
         )
       end)
 
@@ -37,7 +37,7 @@ defmodule TeslaMate.Fleet.OAuth do
              from(s in "fleet_oauth_states",
                where: s.digest == ^hash and s.expires_at > ^now
              ),
-             prefix: "private"
+             prefix: TeslaMate.MultiTenant.SharedDatabase.private_prefix()
            ) do
         {1, _} -> :ok
         _ -> {:error, :invalid_oauth_state}

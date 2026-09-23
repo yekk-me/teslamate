@@ -69,7 +69,7 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
       [
         {TeslaMate.MultiTenant.TenantState, tenant: tenant},
         {TeslaMate.MultiTenant.TrafficLimiter, tenant: tenant},
-        repo_child(tenant, start_repo?),
+        repo_child(tenant, start_repo? and not TeslaMate.MultiTenant.SharedDatabase.enabled?()),
         api_child(tenant, start_repo?),
         repair_child(tenant, start_repo? and start_repair?),
         terrain_child(tenant, start_repo? and start_terrain?),
@@ -203,3 +203,4 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
 
   defp terrain_fuse_name(tenant_id), do: :"#{TeslaMate.Terrain}_#{:erlang.phash2(tenant_id)}"
 end
+
