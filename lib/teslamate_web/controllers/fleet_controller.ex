@@ -3,6 +3,7 @@ defmodule TeslaMateWeb.FleetController do
 
   def mobile_callback(conn, params) do
     query = params |> Map.take(["code", "state", "error"]) |> URI.encode_query()
+
     conn
     |> put_resp_header("cache-control", "no-store")
     |> put_resp_header("referrer-policy", "no-referrer")

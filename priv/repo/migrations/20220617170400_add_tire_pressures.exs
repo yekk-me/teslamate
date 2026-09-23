@@ -10,25 +10,24 @@ defmodule TeslaMate.Repo.Migrations.AddTirePressures do
     end
 
     if prefix() in [nil, "public"] do
-    execute(
-      """
-      CREATE OR REPLACE FUNCTION public.convert_tire_pressure(n numeric(6,2), character varying)
-      RETURNS numeric(6,2)
-      LANGUAGE 'sql'
-      COST 100
-      VOLATILE
-      AS $BODY$
-      SELECT
-      CASE $2 WHEN 'bar' THEN $1
-          WHEN 'psi' THEN $1 * 14.503773773
-      END;
-      $BODY$;
-      """,
-      &noop/0
-    )
+      execute(
+        """
+        CREATE OR REPLACE FUNCTION public.convert_tire_pressure(n numeric(6,2), character varying)
+        RETURNS numeric(6,2)
+        LANGUAGE 'sql'
+        COST 100
+        VOLATILE
+        AS $BODY$
+        SELECT
+        CASE $2 WHEN 'bar' THEN $1
+            WHEN 'psi' THEN $1 * 14.503773773
+        END;
+        $BODY$;
+        """,
+        &noop/0
+      )
     end
   end
 
   defp noop, do: :ok
 end
-

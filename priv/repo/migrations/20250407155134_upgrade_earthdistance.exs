@@ -3,8 +3,7 @@ defmodule TeslaMate.Repo.Migrations.UpgradeEarthdistance do
 
   def change do
     if prefix() in [nil, "public"] do
-    execute("ALTER EXTENSION earthdistance UPDATE")
+      execute("ALTER EXTENSION earthdistance UPDATE")
     end
   end
 end
-

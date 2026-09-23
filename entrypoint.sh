@@ -17,7 +17,11 @@ while ! nc -z "${DATABASE_HOST}" "${DATABASE_PORT}" 2>/dev/null; do
 	sleep 1s
 done
 
-# apply migrations
-bin/teslamate eval "TeslaMate.Release.migrate"
+# Tenant schemas are migrated by the provisioning job using a restricted role.
+# The shared runtime must never run global migrations or require a tenant context here.
+if [ "${TESLAMATE_SHARED_DATABASE:-false}" != "true" ]; then
+  bin/teslamate eval "TeslaMate.Release.migrate"
+fi
 
 exec "$@"
+

@@ -5,14 +5,19 @@ defmodule TeslaMate.Repo.Migrations.AddFleetIngestion do
     do: if(prefix() in [nil, "public"], do: "private", else: prefix() <> "_private")
 
   def change do
-    alter table(:tokens, prefix: private_prefix()) do
-      add :provider, :text, null: false, default: "owner"
-    end
+    # Ecto forbids a second prefix when the migrator itself is scoped. The
+    # private schema is pre-created by provisioning; address it explicitly.
+    private = "\"" <> String.replace(private_prefix(), "\"", "\"\"") <> "\""
 
-    create table(:fleet_oauth_states, primary_key: false, prefix: private_prefix()) do
-      add :digest, :binary, primary_key: true
-      add :expires_at, :utc_datetime_usec, null: false
-    end
+    execute(
+      "ALTER TABLE #{private}.tokens ADD COLUMN provider text NOT NULL DEFAULT 'owner'",
+      "ALTER TABLE #{private}.tokens DROP COLUMN provider"
+    )
+
+    execute(
+      "CREATE TABLE #{private}.fleet_oauth_states (digest bytea PRIMARY KEY, expires_at timestamp(6) NOT NULL)",
+      "DROP TABLE #{private}.fleet_oauth_states"
+    )
 
     create table(:fleet_events) do
       add :car_id, references(:cars, on_delete: :delete_all), null: false

@@ -4,14 +4,17 @@ defmodule TeslaMate.MultiTenant.SharedDatabase do
   @scope_key {__MODULE__, :scope}
 
   defmacro __before_compile__(_env) do
-    definitions = for name <- [:query, :query!, :query_many, :query_many!] do
-      quote do
-        defoverridable [{unquote(name), 3}]
-        def unquote(name)(sql, params, opts) do
-          TeslaMate.MultiTenant.SharedDatabase.scope(fn -> super(sql, params, opts) end)
+    definitions =
+      for name <- [:query, :query!, :query_many, :query_many!] do
+        quote do
+          defoverridable [{unquote(name), 3}]
+
+          def unquote(name)(sql, params, opts) do
+            TeslaMate.MultiTenant.SharedDatabase.scope(fn -> super(sql, params, opts) end)
+          end
         end
       end
-    end
+
     {:__block__, [], definitions}
   end
 
@@ -88,7 +91,13 @@ defmodule TeslaMate.MultiTenant.SharedDatabase do
     end
 
     {:ok, repo} =
-      TeslaMate.Repo.start_link(Keyword.merge(opts, pool_size: 2, pool: DBConnection.ConnectionPool, after_connect: after_connect))
+      TeslaMate.Repo.start_link(
+        Keyword.merge(opts,
+          pool_size: 2,
+          pool: DBConnection.ConnectionPool,
+          after_connect: after_connect
+        )
+      )
 
     try do
       Ecto.Migrator.run(TeslaMate.Repo, :up, all: true, prefix: schema)

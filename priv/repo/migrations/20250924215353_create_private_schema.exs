@@ -9,6 +9,7 @@ defmodule TeslaMate.Repo.Migrations.CreatePrivateSchema do
     if data_prefix() == "public" do
       execute(~s(CREATE SCHEMA IF NOT EXISTS "#{private_prefix()}";))
     end
+
     execute(~s(ALTER TABLE "#{data_prefix()}".tokens SET SCHEMA "#{private_prefix()}";))
   end
 
