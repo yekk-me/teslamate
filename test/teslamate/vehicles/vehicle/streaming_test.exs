@@ -595,4 +595,3 @@ defmodule TeslaMate.Vehicles.Vehicle.StreamingTest do
     end
   end
 end
-
