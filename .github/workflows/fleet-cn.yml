@@ -152,3 +152,69 @@ jobs:
       - name: Stop isolated stack
         if: always()
         run: docker compose --env-file "$FLEET_SMOKE_DIR/.env" -f deploy/fleet/compose.yml -f "$FLEET_SMOKE_DIR/override.json" down -v || true
+
+  shared-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shared_release_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual release image
+        run: docker build -t teslamate-shared-ci .
+      - name: Initialize public baseline and migrate a restricted tenant
+        env:
+          PGPASSWORD: postgres
+        run: |
+          cat > "$RUNNER_TEMP/release.env" <<'ENV'
+          DATABASE_HOST=127.0.0.1
+          DATABASE_PORT=5432
+          DATABASE_USER=postgres
+          DATABASE_PASS=postgres
+          DATABASE_NAME=shared_release_ci
+          ENCRYPTION_KEY=isolated-release-test-encryption-key
+          DISABLE_MQTT=true
+          ENV
+          docker run --rm --network host --env-file "$RUNNER_TEMP/release.env" --entrypoint /bin/dash teslamate-shared-ci -lc 'bin/teslamate eval "TeslaMate.Release.migrate"'
+          psql -h localhost -U postgres -d shared_release_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE shared_runtime LOGIN NOINHERIT PASSWORD 'isolated-runtime-password';
+          CREATE ROLE tenant_release NOLOGIN;
+          GRANT tenant_release TO shared_runtime;
+          CREATE SCHEMA tenant_release AUTHORIZATION tenant_release;
+          CREATE SCHEMA tenant_release_private AUTHORIZATION tenant_release;
+          SQL
+          docker run --rm --network host --env-file "$RUNNER_TEMP/release.env" -e DATABASE_USER=shared_runtime -e DATABASE_PASS=isolated-runtime-password -e TESLAMATE_MULTI_TENANT=false --entrypoint /bin/dash teslamate-shared-ci -lc 'bin/teslamate eval "TeslaMate.MultiTenant.SharedDatabase.migrate(\"tenant_release\")"'
+      - name: Start the shared release and query its tenant database
+        run: |
+          cat > "$RUNNER_TEMP/tenants.json" <<'JSON'
+          {"tenants":[{"id":"release","status":"active","database":{"host":"127.0.0.1","port":5432,"username":"shared_runtime","password":"isolated-runtime-password","name":"shared_release_ci","schema":"tenant_release"},"mqtt":{"disabled":true},"vehicles":[]}]}
+          JSON
+          chmod 644 "$RUNNER_TEMP/tenants.json"
+          docker run -d --name shared-release --network host --env-file "$RUNNER_TEMP/release.env" \
+            -e DATABASE_USER=shared_runtime -e DATABASE_PASS=isolated-runtime-password \
+            -e TESLAMATE_MULTI_TENANT=true -e TESLAMATE_SHARED_DATABASE=true \
+            -e TESLAMATE_TENANT_DIRECTORY=/etc/tenants.json -e TESLAMATE_TENANT_START_WEB=true \
+            -e TESLAMATE_TENANT_START_MQTT=false -e TESLAMATE_INTERNAL_API_TOKEN=isolated-ci-token \
+            -v "$RUNNER_TEMP/tenants.json:/etc/tenants.json:ro" teslamate-shared-ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent -H 'Authorization: Bearer isolated-ci-token' http://localhost:4000/api/internal/tenants/release/fleet/status > /tmp/release-status.json; then
+              python3 -c 'import json; assert json.load(open("/tmp/release-status.json"))["data"] == []'
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Release diagnostics
+        if: failure()
+        run: docker logs shared-release || true
+      - name: Stop release
+        if: always()
+        run: docker rm -f shared-release || true
