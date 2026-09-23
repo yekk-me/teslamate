@@ -78,6 +78,8 @@ jobs:
           DATABASE_NAME=migration_full_source mix ecto.migrate
           python3 tools/shared/migrate.py --tenant-id full-copy-check --runtime-role postgres --source-stopped --work-dir /tmp/shared-full-copy-check
           python3 -c 'import json; assert json.load(open("/tmp/shared-full-copy-check/verification.json"))["verified"]'
+      - name: Project Fleet events into two shared tenant schemas
+        run: mix run --no-start tools/shared/integration.exs
       - run: python3 -m unittest discover -s tools/fleet/tests -v
         if: always()
       - uses: actions/cache/save@v4
