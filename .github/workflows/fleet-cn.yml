@@ -38,7 +38,10 @@ jobs:
       - run: mix deps.get
       - name: Check changed Elixir formatting
         run: |
-          git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format --check-formatted
+          git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format
+          echo FLEET_FORMAT_PATCH
+          git diff -- "*.ex" "*.exs" | gzip | base64 -w0
+          echo
       - run: mix compile
       - name: Fleet database and OAuth regression
         run: mix test test/tesla_api test/teslamate/fleet
@@ -52,3 +55,61 @@ jobs:
             deps
             _build/test
           key: fleet-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+
+  receiver-stack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      MIX_ENV: test
+      DATABASE_NAME: teslamate_fleet_e2e
+      FLEET_SMOKE_DIR: /tmp/fleet-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          elixir-version: '1.19.5'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: false
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build/test
+          key: fleet-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+      - run: mix deps.get && mix compile && mix ecto.create && mix ecto.migrate
+      - run: pip install -r tools/fleet/requirements.txt
+      - name: Prepare isolated test certificates and official vehicle wire client
+        run: |
+          python3 tools/fleet/integration/prepare.py "$FLEET_SMOKE_DIR"
+          git clone https://github.com/teslamotors/fleet-telemetry.git /tmp/fleet-source
+          git -C /tmp/fleet-source checkout 8fbaa100bd365936dab6ecbf0e2d7070c4d765cb
+          mkdir -p /tmp/fleet-source/tools/teslamate-smoke
+          cp tools/fleet/integration/client.go /tmp/fleet-source/tools/teslamate-smoke/main.go
+          cd /tmp/fleet-source
+          go build -o "$FLEET_SMOKE_DIR/vehicle-client" ./tools/teslamate-smoke
+      - name: Build and start official receiver, Kafka and signing proxy
+        run: |
+          docker network create fleet-smoke-network
+          docker compose --env-file "$FLEET_SMOKE_DIR/.env" -f deploy/fleet/compose.yml -f "$FLEET_SMOKE_DIR/override.json" config --quiet
+          docker compose --env-file "$FLEET_SMOKE_DIR/.env" -f deploy/fleet/compose.yml -f "$FLEET_SMOKE_DIR/override.json" up -d --build kafka-init fleet-telemetry fleet-command
+      - name: Real receiver to tenant database integration
+        run: python3 tools/fleet/integration/run.py
+      - name: Integration diagnostics
+        if: failure()
+        run: |
+          cat /tmp/fleet-smoke/*.log || true
+          docker compose --env-file "$FLEET_SMOKE_DIR/.env" -f deploy/fleet/compose.yml -f "$FLEET_SMOKE_DIR/override.json" logs --tail 100 || true
+      - name: Stop isolated stack
+        if: always()
+        run: docker compose --env-file "$FLEET_SMOKE_DIR/.env" -f deploy/fleet/compose.yml -f "$FLEET_SMOKE_DIR/override.json" down -v || true

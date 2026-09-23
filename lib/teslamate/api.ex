@@ -58,6 +58,17 @@ defmodule TeslaMate.Api do
     end
   end
 
+  def fleet_telemetry(name, vin, action) do
+    tenant_id = tenant_id_for(name)
+    with :ok <- allow_tesla_api(tenant_id),
+         {:ok, auth} <- fetch_auth(name) do
+      case TeslaApi.FleetTelemetry.run(auth, vin, action) do
+        {:ok, result} -> {:ok, result}
+        error -> handle_result(error, auth, name, tenant_id)
+      end
+    end
+  end
+
   # Fleet Telemetry replaces the retired Owner streaming transport.
   def stream(_name \\ @name, _vid, _receiver), do: {:ok, nil}
 

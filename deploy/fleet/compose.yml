@@ -1,29 +1,88 @@
-# Attach to the TeslaMate service network. Kafka is provisioned separately.
+name: teslamate-fleet
 services:
-  fleet-telemetry:
-    image: ${FLEET_TELEMETRY_IMAGE:?Set a tested pinned official receiver image}
+  kafka:
+    image: apache/kafka:3.9.1
     restart: unless-stopped
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes: ["kafka-data:/var/lib/kafka/data"]
+    networks: [queue]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+  kafka-init:
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka: {condition: service_healthy}
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        for topic in teslamate_V teslamate_connectivity teslamate_errors; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$topic" --partitions 3 --replication-factor 1 --config retention.ms=604800000
+        done
+    networks: [queue]
+  fleet-telemetry:
+    # Unmodified official source, pinned to a reviewed revision.
+    image: teslamate-fleet-receiver:8fbaa100
+    build:
+      context: https://github.com/teslamotors/fleet-telemetry.git#8fbaa100bd365936dab6ecbf0e2d7070c4d765cb
+    user: "${FLEET_UID:-1000}:${FLEET_GID:-1000}"
+    restart: unless-stopped
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
     command: ["/fleet-telemetry", "-config=/etc/fleet/server.json"]
-    ports: ["${FLEET_TELEMETRY_PORT:-443}:443"]
-    volumes:
-      - ./server.json:/etc/fleet/server.json:ro
-      - ./certificates:/etc/fleet:ro
+    ports: ["${FLEET_TELEMETRY_PORT:-443}:8443"]
+    volumes: ["./runtime/receiver:/etc/fleet:ro"]
+    networks: [queue]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+  fleet-command:
+    image: teslamate-fleet-command:f61e29e8
+    build:
+      context: https://github.com/teslamotors/vehicle-command.git#f61e29e8e622f1f831daff60bcc24976201ff81d
+    user: "${FLEET_UID:-1000}:${FLEET_GID:-1000}"
+    restart: unless-stopped
+    command: ["-host", "0.0.0.0", "-port", "4443", "-key-file", "/keys/application.pem", "-cert", "/keys/proxy-cert.pem", "-tls-key", "/keys/proxy-key.pem"]
+    volumes: ["./runtime/command:/keys:ro"]
     networks: [teslamate]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
   fleet-bridge:
     build: ../../tools/fleet
+    user: "${FLEET_UID:-1000}:${FLEET_GID:-1000}"
     restart: unless-stopped
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
     environment:
       KAFKA_CONSUMER_CONFIG: /etc/bridge/consumer.json
       FLEET_VIN_ROUTES: /etc/bridge/routes.json
       FLEET_KAFKA_TOPIC: teslamate_V
-      TESLAMATE_INTERNAL_URL: http://teslamate:4000
-      TESLAMATE_INTERNAL_API_TOKEN_FILE: /run/secrets/internal_api_token
-    volumes:
-      - ./consumer.json:/etc/bridge/consumer.json:ro
-      - ./routes.json:/etc/bridge/routes.json:ro
-      - ./internal_api_token:/run/secrets/internal_api_token:ro
-    networks: [teslamate]
+      TESLAMATE_INTERNAL_URL: ${TESLAMATE_INTERNAL_URL:-http://teslamate:4000}
+      TESLAMATE_INTERNAL_API_TOKEN_FILE: /etc/bridge/internal_api_token
+    volumes: ["./runtime/bridge:/etc/bridge:ro"]
+    networks: [queue, teslamate]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
 networks:
+  queue:
   teslamate:
     external: true
     name: ${TESLAMATE_DOCKER_NETWORK:-teslamate_default}
+volumes:
+  kafka-data:

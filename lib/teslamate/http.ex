@@ -27,6 +27,19 @@ defmodule TeslaMate.HTTP do
       ],
       :default => [size: System.get_env("HTTP_POOL_SIZE", "5") |> String.to_integer()]
     }
+    |> fleet_proxy_pool()
+  end
+
+  defp fleet_proxy_pool(pools) do
+    case TeslaApi.FleetTelemetry.proxy_url() do
+      {:ok, url} ->
+        transport = case System.get_env("TESLA_FLEET_PROXY_CA_FILE") do
+          nil -> [verify: :verify_peer]
+          file -> [verify: :verify_peer, cacertfile: file]
+        end
+        Map.put(pools, url, [size: 2, conn_opts: [transport_opts: transport]])
+      _ -> pools
+    end
   end
 
   @pool_timeout System.get_env("HTTP_POOL_TIMEOUT", "10000") |> String.to_integer()

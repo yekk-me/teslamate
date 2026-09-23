@@ -35,6 +35,10 @@ defmodule TeslaMateWeb.Router do
     plug TeslaMateWeb.Plugs.InternalApiAuth
   end
 
+  scope "/fleet", TeslaMateWeb do
+    get "/callback", FleetController, :callback
+  end
+
   scope "/", TeslaMateWeb do
     pipe_through :browser
 
@@ -62,6 +66,9 @@ defmodule TeslaMateWeb.Router do
   scope "/api/internal", TeslaMateWeb do
     pipe_through :internal_api
 
+    post "/tenants/:tenant_id/fleet/vehicles/:vin/telemetry", FleetController, :configure
+    get "/tenants/:tenant_id/fleet/vehicles/:vin/telemetry", FleetController, :configuration
+    get "/tenants/:tenant_id/fleet/vehicles/:vin/telemetry/errors", FleetController, :errors
     get "/tenants/:tenant_id/fleet/status", FleetController, :status
     post "/tenants/:tenant_id/fleet/events", FleetController, :ingest
     post "/tenants/:tenant_id/fleet/authorize", MultiTenantAuthController, :begin_fleet
