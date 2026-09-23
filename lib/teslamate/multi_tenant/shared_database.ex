@@ -75,6 +75,8 @@ defmodule TeslaMate.MultiTenant.SharedDatabase do
       do: raise("migrations require an isolated maintenance process")
 
     if Process.whereis(TeslaMate.Repo), do: raise("migration Repo must not already be running")
+    Application.load(:teslamate)
+    {:ok, _} = Application.ensure_all_started(:ssl)
     {:ok, _} = Application.ensure_all_started(:ecto_sql)
     {:ok, _} = Application.ensure_all_started(:cloak_ecto)
     {:ok, vault} = TeslaMate.Vault.start_link([])
@@ -86,7 +88,7 @@ defmodule TeslaMate.MultiTenant.SharedDatabase do
     end
 
     {:ok, repo} =
-      TeslaMate.Repo.start_link(Keyword.merge(opts, pool_size: 2, after_connect: after_connect))
+      TeslaMate.Repo.start_link(Keyword.merge(opts, pool_size: 2, pool: DBConnection.ConnectionPool, after_connect: after_connect))
 
     try do
       Ecto.Migrator.run(TeslaMate.Repo, :up, all: true, prefix: schema)

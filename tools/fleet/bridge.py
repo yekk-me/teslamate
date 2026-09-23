@@ -26,7 +26,11 @@ def deliver(consumer, message, routes, post):
         if not isinstance(payload, dict) or payload.get("vin") != vin:
             raise ValueError()
         tenants = routes[vin]
-        if not isinstance(tenants, list) or not tenants:
+        # Explicit control-plane revocation stops recording without blocking other VINs.
+        # Unknown VINs remain an error; an empty/malformed assignment is never a revocation.
+        if tenants == {"disabled": True}:
+            tenants = []
+        elif not isinstance(tenants, list) or not tenants:
             raise ValueError()
         if any(not isinstance(t, str) or not t for t in tenants):
             raise ValueError()
@@ -66,7 +70,7 @@ def main():
     config = json.loads(Path(os.environ["KAFKA_CONSUMER_CONFIG"]).read_text())
     config.update({"enable.auto.commit": False, "enable.auto.offset.store": False,
                    "auto.offset.reset": "earliest"})
-    routes = json.loads(Path(os.environ["FLEET_VIN_ROUTES"]).read_text())
+    route_path = Path(os.environ["FLEET_VIN_ROUTES"])
     token = Path(os.environ["TESLAMATE_INTERNAL_API_TOKEN_FILE"]).read_text().strip()
     post = http_sender(os.environ["TESLAMATE_INTERNAL_URL"], token)
     consumer = Consumer(config)
@@ -75,6 +79,7 @@ def main():
         while True:
             message = consumer.poll(1.0)
             if message is not None:
+                routes = json.loads(route_path.read_text())
                 deliver(consumer, message, routes, post)
     finally:
         consumer.close()

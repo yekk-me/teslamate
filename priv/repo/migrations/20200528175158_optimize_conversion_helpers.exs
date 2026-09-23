@@ -2,6 +2,7 @@ defmodule TeslaMate.Repo.Migrations.OptimizeConversionHelpers do
   use Ecto.Migration
 
   def change do
+    if prefix() in [nil, "public"] do
     execute("DROP FUNCTION IF EXISTS public.convert_km(double precision, text);", &noop/0)
 
     execute(
@@ -39,7 +40,9 @@ defmodule TeslaMate.Repo.Migrations.OptimizeConversionHelpers do
       """,
       &noop/0
     )
+    end
   end
 
   defp noop, do: :ok
 end
+

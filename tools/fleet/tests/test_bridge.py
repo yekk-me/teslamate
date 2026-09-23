@@ -45,3 +45,14 @@ class DeliveryTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             deliver(self.consumer, self.msg, self.routes, Mock(return_value={"status": "queued"}))
         self.consumer.commit.assert_not_called()
+
+    def test_explicit_revocation_does_not_block_other_vehicles(self):
+        post = Mock()
+        deliver(self.consumer, self.msg, {"LRW00000000000001": {"disabled": True}}, post)
+        post.assert_not_called()
+        self.consumer.commit.assert_called_once()
+
+    def test_empty_route_is_not_an_implicit_revocation(self):
+        with self.assertRaises(RuntimeError):
+            deliver(self.consumer, self.msg, {"LRW00000000000001": []}, Mock())
+        self.consumer.commit.assert_not_called()

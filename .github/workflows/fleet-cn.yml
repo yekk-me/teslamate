@@ -46,6 +46,13 @@ jobs:
       - name: Fleet database and OAuth regression
         run: mix test test/tesla_api test/teslamate/fleet
       - run: mix test
+      - name: Migrate a real tenant schema using a restricted role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d teslamate_test -v ON_ERROR_STOP=1 -c 'CREATE ROLE tenant_migration_check NOLOGIN; CREATE SCHEMA tenant_migration_check AUTHORIZATION tenant_migration_check; CREATE SCHEMA tenant_migration_check_private AUTHORIZATION tenant_migration_check;'
+          TESLAMATE_MULTI_TENANT=false mix run --no-start -e 'TeslaMate.MultiTenant.SharedDatabase.migrate("tenant_migration_check")'
+          psql -h localhost -U postgres -d teslamate_test -v ON_ERROR_STOP=1 -c 'SET ROLE tenant_migration_check; SELECT count(*) FROM tenant_migration_check.cars; SELECT count(*) FROM tenant_migration_check_private.tokens;'
       - run: python3 -m unittest discover -s tools/fleet/tests -v
         if: always()
       - uses: actions/cache/save@v4
