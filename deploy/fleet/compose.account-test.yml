@@ -1,0 +1,36 @@
+# Isolated account/vehicle test. Never points to an existing tenant database.
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fleet_account_test
+      POSTGRES_USER: fleet_test
+      POSTGRES_PASSWORD: ${FLEET_TEST_DB_PASSWORD:?Run setup.py --account-test}
+    volumes: ["account-test-db:/var/lib/postgresql/data"]
+    networks: [teslamate]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleet_test -d fleet_account_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  teslamate:
+    image: teslamate:fleet-cn-account-test
+    build: ../..
+    restart: unless-stopped
+    env_file:
+      - path: ./runtime/account-test.env
+        format: raw
+    depends_on:
+      postgres: {condition: service_healthy}
+    ports: ["127.0.0.1:14000:4000"]
+    volumes:
+      - ./runtime/control:/etc/fleet-control:ro
+      - ./runtime/teslamate:/etc/fleet:ro
+    networks: [teslamate]
+networks:
+  teslamate:
+    external: false
+    name: teslamate-fleet-account-test
+volumes:
+  account-test-db:

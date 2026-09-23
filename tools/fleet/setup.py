@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import secrets
 import subprocess
 from pathlib import Path
 
@@ -69,6 +70,37 @@ def initialize(target, hostname, cert, key, token, port=443):
         os.umask(old_mask)
 
 
+def account_test(target):
+    runtime = target / "runtime"
+    password = secrets.token_urlsafe(32)
+    encryption = secrets.token_urlsafe(48)
+    old_mask = os.umask(0o077)
+    try:
+        control = runtime / "control"
+        control.mkdir(mode=0o750)
+        write_json(control / "tenants.json", {"tenants": [{"id": "fleet-test", "user_id": "operator", "status": "active",
+            "database": {"host": "postgres", "port": 5432, "username": "fleet_test", "password": password, "name": "fleet_account_test"},
+            "mqtt": {"disabled": True}, "vehicles": []}]})
+        with (target / ".env").open("a") as env:
+            env.write("FLEET_TEST_DB_PASSWORD=" + password + "\n")
+        config = {
+            "DATABASE_HOST": "postgres", "DATABASE_PORT": "5432", "DATABASE_USER": "fleet_test", "DATABASE_PASS": password,
+            "DATABASE_NAME": "fleet_account_test", "ENCRYPTION_KEY": encryption,
+            "TESLAMATE_MULTI_TENANT": "true", "TESLAMATE_TENANT_START_WEB": "true",
+            "TESLAMATE_TENANT_START_MQTT": "false", "TESLAMATE_TENANT_DIRECTORY": "/etc/fleet-control/tenants.json",
+            "TESLAMATE_INTERNAL_API_TOKEN": (runtime/"bridge/internal_api_token").read_text().strip(),
+            "TESLA_FLEET_TELEMETRY": "true", "TESLA_FLEET_RECONCILE_SECONDS": "300",
+            "TESLA_FLEET_COMMAND_PROXY": "https://fleet-command:4443", "TESLA_FLEET_PROXY_CA_FILE": "/etc/fleet/proxy-ca.pem",
+            "TESLA_FLEET_VEHICLE_CONFIG_FILE": "/etc/fleet/vehicle-config.json",
+            "TESLA_FLEET_CLIENT_ID": "REPLACE", "TESLA_FLEET_CLIENT_SECRET": "REPLACE",
+            "TESLA_FLEET_REDIRECT_URI": "https://REPLACE/fleet/callback"
+        }
+        # Compose raw env_file format prevents $ interpolation in client secrets.
+        (runtime/"account-test.env").write_text("".join(k+"="+v+"\n" for k,v in config.items()))
+    finally:
+        os.umask(old_mask)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hostname", required=True)
@@ -76,8 +108,11 @@ def main():
     parser.add_argument("--key", required=True, type=Path)
     parser.add_argument("--internal-token-file", required=True, type=Path)
     parser.add_argument("--port", type=int, default=443)
+    parser.add_argument("--account-test", action="store_true", help="Also generate isolated TeslaMate/PostgreSQL test configuration")
     args = parser.parse_args()
     initialize(ROOT / "deploy/fleet", args.hostname, args.cert, args.key, args.internal_token_file, args.port)
+    if args.account_test:
+        account_test(ROOT / "deploy/fleet")
     print("Created deploy/fleet/runtime. Publish the application public key, mount runtime/teslamate into TeslaMate, then start Compose. See docs/fleet-account-test.md.")
 
 

@@ -103,6 +103,13 @@ jobs:
           docker network create fleet-smoke-network
           docker compose --env-file "$FLEET_SMOKE_DIR/.env" -f deploy/fleet/compose.yml -f "$FLEET_SMOKE_DIR/override.json" config --quiet
           docker compose --env-file "$FLEET_SMOKE_DIR/.env" -f deploy/fleet/compose.yml -f "$FLEET_SMOKE_DIR/override.json" up -d --build kafka-init fleet-telemetry fleet-command
+      - name: Validate optional isolated account deployment
+        run: |
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,"tools/fleet"); from setup import account_test; account_test(Path("/tmp/fleet-smoke"))'
+          cp /tmp/fleet-smoke/runtime/account-test.env /tmp/fleet-account-test.env
+          mkdir -p deploy/fleet/runtime
+          cp /tmp/fleet-account-test.env deploy/fleet/runtime/account-test.env
+          docker compose --env-file "$FLEET_SMOKE_DIR/.env" -f deploy/fleet/compose.yml -f deploy/fleet/compose.account-test.yml config --quiet
       - name: Real receiver to tenant database integration
         run: python3 tools/fleet/integration/run.py
       - name: Integration diagnostics

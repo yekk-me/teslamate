@@ -6,7 +6,10 @@ defmodule TeslaMateWeb.FleetController do
     |> put_resp_header("cache-control", "no-store")
     |> put_resp_header("referrer-policy", "no-referrer")
     |> put_resp_content_type("text/html")
-    |> send_resp(200, "<!doctype html><meta charset=utf-8><title>Fleet 授权回调</title><p>请将地址栏完整链接粘贴回服务器上的账号授权工具。不要将此链接分享给他人。</p>")
+    |> send_resp(
+      200,
+      "<!doctype html><meta charset=utf-8><title>Fleet 授权回调</title><p>请将地址栏完整链接粘贴回服务器上的账号授权工具。不要将此链接分享给他人。</p>"
+    )
   end
 
   def configure(conn, %{"tenant_id" => tenant, "vin" => vin}),
@@ -20,10 +23,14 @@ defmodule TeslaMateWeb.FleetController do
 
   defp provision(conn, tenant, vin, action) do
     case TeslaMate.Fleet.Provision.run(tenant, vin, action) do
-      {:ok, result} -> json(conn, %{data: result})
+      {:ok, result} ->
+        json(conn, %{data: result})
+
       {:error, reason} when is_atom(reason) ->
         conn |> put_status(:unprocessable_entity) |> json(%{error: to_string(reason)})
-      _ -> conn |> put_status(:bad_gateway) |> json(%{error: "telemetry_request_failed"})
+
+      _ ->
+        conn |> put_status(:bad_gateway) |> json(%{error: "telemetry_request_failed"})
     end
   end
 

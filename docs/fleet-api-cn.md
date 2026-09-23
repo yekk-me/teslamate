@@ -10,6 +10,10 @@ Fleet REST 模式沿用原有记录状态机，适合先完成官方授权迁移
 
 超过排序窗口才到达的事件会保留为 `late`，不会回写已经结束的行程，也不会错误地并入当前行程；**当前没有自动重建历史行程的功能**。缺少位置、里程、续航、挡位或充电关键字段的事件标记 `incomplete`，原始数据完整保留。这两类状态需要监控，不能当作所有数据已计入统计。车辆或服务未发送的数据不能通过 REST 追回。
 
+## 完整部署与账号测试入口
+
+参见 [完整接收服务与账号实测](fleet-account-test.md)。现在仓库提供接收器、持久化 Kafka、官方签名代理和桥接的一套 Compose，并提供可选的独立 TeslaMate/PostgreSQL 测试环境。`onboard.py` 可完成官方账号授权、测试租户车辆分配和推送配置，无需手工提取用户 token。
+
 ## 配置
 
 在现有多租户 TeslaMate 服务增加：
@@ -56,10 +60,10 @@ TESLA_FLEET_REORDER_SECONDS=10
 4. 用户在 Tesla App 中给车辆配对应用虚拟钥匙。按官方工具检查车辆与固件支持情况。
 5. 部署官方 [vehicle-command proxy](https://github.com/teslamotors/vehicle-command/tree/main/cmd/tesla-http-proxy)，配置中国 Fleet 上游与应用签名私钥。不要关闭 TLS 校验。
 6. 部署官方接收器。参考 `deploy/fleet/server.json.example`；本文核对的官方源码版本为 `8fbaa100bd365936dab6ecbf0e2d7070c4d765cb`。设置 `transmit_decoded_records=true` 和 `reliable_ack_sources={"V":"kafka"}`。TLS 必须在接收器终止，四层代理可以转发，不要让普通七层代理剥离车辆证书。
-7. 配置持久化 Kafka，预建 `teslamate_V`、`teslamate_connectivity` 主题。V 的 partition key 必须保持官方 VIN，使用持久磁盘、适当保留期以及生产所需副本/最小同步副本；接收器成功写 Kafka 后才向车辆确认。接收器不使用 stdout 或易失性 Pub/Sub 作为确认依据。
-8. 复制 `deploy/fleet/{server,consumer,routes}.json.example` 为相应 `.json`，填写 Kafka 与 VIN→租户路由。共享 VIN 可以对应多个被授权租户。路由文件来自可信账户中心，桥接还会校验 Kafka key 与 payload VIN 相同；服务再次核对租户当前车辆分配与权限。
-9. 把内部 API token 写入权限受控的 `deploy/fleet/internal_api_token`。部署时让 bridge 的 UID 10001 可读。复制 TLS 证书到配置目录。设置 `FLEET_TELEMETRY_IMAGE` 为已验证并固定版本/摘要的官方镜像，再运行 `docker compose -f deploy/fleet/compose.yml up -d`。Kafka 和 TeslaMate 必须在该配置可达的网络中。
-10. 使用该用户的官方 Fleet access token 文件设置 `TESLA_FLEET_ACCESS_TOKEN_FILE`，并设置可信的 `TESLA_FLEET_COMMAND_PROXY=https://...`；自签代理证书用 `TESLA_FLEET_PROXY_CA_FILE` 指定信任 CA。复制 vehicle-config 示例并填写接收器主机名与完整 PEM 证书链。串行运行 `python3 tools/fleet/provision.py configure VIN vehicle-config.json`，然后 `python3 tools/fleet/provision.py status VIN`。必须检查 skipped_vehicles 及 `synced=true`，不能把 HTTP 200 当作车辆已配置成功。
+7. Compose 已包含单机持久化 Kafka 与主题初始化；生产可替换成高可用 Kafka。预建 `teslamate_V`、`teslamate_connectivity` 主题。V 的 partition key 必须保持官方 VIN，使用持久磁盘、适当保留期以及生产所需副本/最小同步副本；接收器成功写 Kafka 后才向车辆确认。接收器不使用 stdout 或易失性 Pub/Sub 作为确认依据。
+8. 按账号实测文档运行 `tools/fleet/setup.py` 生成 `deploy/fleet/runtime`，配置可信 VIN→租户路由。共享 VIN 可以对应多个被授权租户。桥接校验 Kafka key 与 payload VIN；服务再次核对租户当前车辆分配与权限。
+9. Compose 从固定提交构建官方接收器与签名代理，并自动创建 Kafka 主题；运行前检查域名、证书及 Docker 网络。内部 token 和密钥按运行用户权限只读挂载。生产配置仅信任官方内置车辆 CA，不添加 CI 测试 CA。
+10. 优先使用 `onboard.py configure`，由服务端读取租户令牌完成配置。独立调试也可使用该用户的官方 Fleet access token 文件设置 `TESLA_FLEET_ACCESS_TOKEN_FILE`，并设置可信的 `TESLA_FLEET_COMMAND_PROXY=https://...`；自签代理证书用 `TESLA_FLEET_PROXY_CA_FILE` 指定信任 CA。复制 vehicle-config 示例并填写接收器主机名与完整 PEM 证书链。串行运行 `python3 tools/fleet/provision.py configure VIN vehicle-config.json`，然后 `python3 tools/fleet/provision.py status VIN`。必须检查 skipped_vehicles 及 `synced=true`，不能把 HTTP 200 当作车辆已配置成功。
 11. 完成字段验证后，在车辆停放且未充电时把 `TESLA_FLEET_TELEMETRY` 改为 true 并重启租户运行时。先迁移数据库，再启动新代码；不要在进行中的行程/充电过程中切换记录器。
 
 桥接消费进度只在目标租户全部返回 `stored` 或 `duplicate` 后同步提交。请求超时、租户不可用、未知 VIN、路由错误会退出等待监督器重试，不跳过数据；修正路由后重启即可。更新 routes 后需重启 bridge。Kafka 保留期应覆盖最长预期停机，数据库与 Kafka 均需备份。

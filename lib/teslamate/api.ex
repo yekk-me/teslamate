@@ -60,6 +60,7 @@ defmodule TeslaMate.Api do
 
   def fleet_telemetry(name, vin, action) do
     tenant_id = tenant_id_for(name)
+
     with :ok <- allow_tesla_api(tenant_id),
          {:ok, auth} <- fetch_auth(name) do
       case TeslaApi.FleetTelemetry.run(auth, vin, action) do
