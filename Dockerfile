@@ -2,15 +2,11 @@ FROM elixir:1.19.5-otp-28 AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ENV HEX_MIRROR="https://hexpm.upyun.com" \
-    HEX_CDN="https://hexpm.upyun.com"
+ARG HEX_MIRROR=https://repo.hex.pm
+ENV HEX_MIRROR=${HEX_MIRROR} \
+    HEX_CDN=${HEX_MIRROR}
 
-RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*
-
-RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
-    echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-
+# Keep the base image distribution repositories consistent with its libraries.
 RUN apt-get update \
     && apt-get install -y ca-certificates curl gnupg \
     && mkdir -p /etc/apt/keyrings \
@@ -87,3 +83,4 @@ EXPOSE 4000
 
 ENTRYPOINT ["tini", "--", "/bin/dash", "/entrypoint.sh"]
 CMD ["bin/teslamate", "start"]
+
