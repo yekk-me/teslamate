@@ -37,6 +37,7 @@ defmodule TeslaMateWeb.Router do
 
   scope "/fleet", TeslaMateWeb do
     get "/callback", FleetController, :callback
+    get "/mobile-callback", FleetController, :mobile_callback
   end
 
   scope "/", TeslaMateWeb do

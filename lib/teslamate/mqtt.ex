@@ -39,7 +39,9 @@ defmodule TeslaMate.Mqtt do
     tenant_id = Keyword.get(opts, :tenant_id)
 
     children = [
-      if(not shared?, do: {Tortoise311.Connection, connection_config(opts) ++ [client_id: client_id]}),
+      if(not shared?,
+        do: {Tortoise311.Connection, connection_config(opts) ++ [client_id: client_id]}
+      ),
       {Publisher, client_id: client_id, name: publisher_name, tenant_id: tenant_id},
       {PubSub,
        namespace: opts[:namespace],
@@ -61,11 +63,15 @@ defmodule TeslaMate.Mqtt do
 
   defp validate_shared_broker!(opts) do
     shared = Application.fetch_env!(:teslamate, :mqtt)
+
     for key <- [:host, :username, :password, :tls] do
       unless opts[key] == shared[key], do: raise("tenant MQTT broker differs from shared broker")
     end
+
     default = if opts[:tls], do: 8883, else: 1883
-    unless (opts[:port] || default) == (shared[:port] || default), do: raise("tenant MQTT port differs from shared broker")
+
+    unless (opts[:port] || default) == (shared[:port] || default),
+      do: raise("tenant MQTT port differs from shared broker")
   end
 
   # Private
@@ -108,4 +114,3 @@ defmodule TeslaMate.Mqtt do
     "TESLAMATE_" <> (:rand.uniform() |> to_string() |> Base.encode16() |> String.slice(0..10))
   end
 end
-

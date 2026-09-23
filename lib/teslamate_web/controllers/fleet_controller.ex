@@ -1,6 +1,14 @@
 defmodule TeslaMateWeb.FleetController do
   use TeslaMateWeb, :controller
 
+  def mobile_callback(conn, params) do
+    query = params |> Map.take(["code", "state", "error"]) |> URI.encode_query()
+    conn
+    |> put_resp_header("cache-control", "no-store")
+    |> put_resp_header("referrer-policy", "no-referrer")
+    |> redirect(external: "mytess://fleet-auth?" <> query)
+  end
+
   def callback(conn, _params) do
     conn
     |> put_resp_header("cache-control", "no-store")

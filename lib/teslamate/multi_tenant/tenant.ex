@@ -150,8 +150,11 @@ defmodule TeslaMate.MultiTenant.Tenant.Database do
   end
 
   defp validate_schema(nil), do: :ok
+
   defp validate_schema(schema) do
-    if TeslaMate.MultiTenant.SharedDatabase.valid_schema?(schema), do: :ok, else: {:error, :invalid_database_schema}
+    if TeslaMate.MultiTenant.SharedDatabase.valid_schema?(schema),
+      do: :ok,
+      else: {:error, :invalid_database_schema}
   end
 
   def new(_attrs), do: {:error, :invalid_database}
@@ -392,4 +395,3 @@ defmodule TeslaMate.MultiTenant.Tenant.Vehicle do
   defp string_or_nil(value) when is_integer(value), do: Integer.to_string(value)
   defp string_or_nil(_value), do: nil
 end
-

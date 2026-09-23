@@ -71,7 +71,8 @@ defmodule TeslaMate.Application do
       if(TeslaMate.MultiTenant.start_web?(), do: TeslaMateWeb.Endpoint),
       if(TeslaMate.MultiTenant.SharedDatabase.enabled?(), do: TeslaMate.Repo),
       if(TeslaMate.MultiTenant.SharedDatabase.enabled?() and TeslaMate.MultiTenant.start_mqtt?(),
-        do: TeslaMate.Mqtt.shared_child_spec()),
+        do: TeslaMate.Mqtt.shared_child_spec()
+      ),
       TeslaMate.MultiTenant.RuntimeSupervisor,
       TeslaMate.MultiTenant.ControlLoop
     ]
@@ -104,4 +105,3 @@ defmodule TeslaMate.Application do
     :ok
   end
 end
-

@@ -203,4 +203,3 @@ defmodule TeslaMate.MultiTenant.TenantSupervisor do
 
   defp terrain_fuse_name(tenant_id), do: :"#{TeslaMate.Terrain}_#{:erlang.phash2(tenant_id)}"
 end
-

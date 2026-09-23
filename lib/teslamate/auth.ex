@@ -27,7 +27,9 @@ defmodule TeslaMate.Auth do
   end
 
   def get_tokens do
-    case Repo.all(from(t in Tokens, prefix: ^TeslaMate.MultiTenant.SharedDatabase.private_prefix())) do
+    case Repo.all(
+           from(t in Tokens, prefix: ^TeslaMate.MultiTenant.SharedDatabase.private_prefix())
+         ) do
       [%Tokens{} = tokens] ->
         tokens
 

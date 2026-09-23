@@ -1,7 +1,8 @@
 defmodule TeslaMate.Repo.Migrations.AddFleetIngestion do
   use Ecto.Migration
 
-  defp private_prefix, do: if(prefix() in [nil, "public"], do: "private", else: prefix() <> "_private")
+  defp private_prefix,
+    do: if(prefix() in [nil, "public"], do: "private", else: prefix() <> "_private")
 
   def change do
     alter table(:tokens, prefix: private_prefix()) do

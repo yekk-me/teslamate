@@ -24,13 +24,15 @@ defmodule TeslaMate.MultiTenant.RuntimeSupervisor do
     if TeslaMate.MultiTenant.SharedDatabase.enabled?() do
       schemas = Enum.map(tenants, & &1.database.schema)
       namespaces = Enum.map(tenants, & &1.mqtt.namespace)
+
       unless Enum.all?(schemas, &TeslaMate.MultiTenant.SharedDatabase.valid_schema?/1) and
-        length(Enum.uniq(schemas)) == length(schemas) and
-        Enum.all?(namespaces, &(is_binary(&1) and &1 != "")) and
-        length(Enum.uniq(namespaces)) == length(namespaces) do
+               length(Enum.uniq(schemas)) == length(schemas) and
+               Enum.all?(namespaces, &(is_binary(&1) and &1 != "")) and
+               length(Enum.uniq(namespaces)) == length(namespaces) do
         raise "shared tenant directory requires unique schemas and MQTT namespaces"
       end
     end
+
     tenants = TeslaMate.MultiTenant.Policy.allowed_tenants(tenants)
     desired_ids = tenants |> Enum.map(& &1.id) |> MapSet.new()
     running = running_tenants(supervisor)
@@ -120,4 +122,3 @@ defmodule TeslaMate.MultiTenant.RuntimeSupervisor do
     end
   end
 end
-

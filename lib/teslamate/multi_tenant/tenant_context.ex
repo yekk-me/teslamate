@@ -36,15 +36,14 @@ defmodule TeslaMate.MultiTenant.TenantContext do
     if TeslaMate.MultiTenant.SharedDatabase.enabled?() do
       Process.whereis(TeslaMate.Repo) || raise "shared repo is not running"
     else
-    case Registry.lookup(TeslaMate.MultiTenant.Registry, {:repo, tenant_id}) do
-      [{pid, _value}] ->
-        pid
+      case Registry.lookup(TeslaMate.MultiTenant.Registry, {:repo, tenant_id}) do
+        [{pid, _value}] ->
+          pid
 
-      [] ->
-        raise "tenant repo is not running for #{inspect(tenant_id)}"
+        [] ->
+          raise "tenant repo is not running for #{inspect(tenant_id)}"
+      end
     end
-  end
-
   end
 
   def repo_name(tenant_id), do: TenantSupervisor.repo_name(tenant_id)
@@ -59,4 +58,3 @@ defmodule TeslaMate.MultiTenant.TenantContext do
     TeslaMate.Repo.put_dynamic_repo(previous_repo)
   end
 end
-
