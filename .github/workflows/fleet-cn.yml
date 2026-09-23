@@ -36,6 +36,12 @@ jobs:
           key: fleet-${{ runner.os }}-${{ hashFiles('mix.lock') }}
       # This branch already has Elixir 1.19 struct typing warnings; preserve logs.
       - run: mix deps.get
+      - name: Format new integration fixture
+        run: |
+          mix format tools/shared/integration.exs
+          echo SHARED_FIXTURE_FORMAT
+          git diff -- tools/shared/integration.exs | gzip | base64 -w0
+          echo
       - name: Check changed Elixir formatting
         run: |
           git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format --check-formatted
