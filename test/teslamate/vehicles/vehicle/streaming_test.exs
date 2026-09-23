@@ -450,8 +450,6 @@ defmodule TeslaMate.Vehicles.Vehicle.StreamingTest do
   end
 
   test "resumes logging when starting a drive", %{test: name} do
-    now = DateTime.utc_now()
-
     events = [
       {:ok, online_event()},
       {:ok, online_event()},
@@ -471,6 +469,7 @@ defmodule TeslaMate.Vehicles.Vehicle.StreamingTest do
     assert_receive {:insert_position, ^car, %{}}
     assert_receive {:pubsub, {:broadcast, _, _, %Summary{state: :suspended}}}
 
+    now = DateTime.utc_now()
     stream(name, %{shift_state: "P", speed: 0, power: 0, elevation: 50, time: now})
     refute_receive _
 
@@ -596,3 +595,4 @@ defmodule TeslaMate.Vehicles.Vehicle.StreamingTest do
     end
   end
 end
+

@@ -31,8 +31,8 @@ defmodule TeslaApi.FleetTelemetry do
 
       if not is_map(skipped) or
            Enum.any?(skipped, fn {_reason, vehicles} -> vehicles not in [[], nil] end),
-        do: {:error, %Error{reason: :vehicle_configuration_skipped}},
-        else: {:ok, result}
+         do: {:error, %Error{reason: :vehicle_configuration_skipped}},
+         else: {:ok, result}
     else
       {:error, error} -> {:error, error}
       _ -> {:error, %Error{reason: :invalid_telemetry_response}}
@@ -76,7 +76,8 @@ defmodule TeslaApi.FleetTelemetry do
       )
 
     case Tesla.request(client, method: method, url: url, body: body) do
-      {:ok, %Tesla.Env{status: 200, body: %{"response" => result}}} when is_map(result) or is_list(result) ->
+      {:ok, %Tesla.Env{status: 200, body: %{"response" => result}}}
+      when is_map(result) or is_list(result) ->
         {:ok, result}
 
       {:ok, %Tesla.Env{status: 401}} ->
