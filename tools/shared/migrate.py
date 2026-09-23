@@ -112,6 +112,9 @@ def main():
         raise RuntimeError('target schemas already exist; refusing to overwrite data')
     if sql(target, f'SELECT count(*) FROM pg_roles WHERE rolname={literal(schema)}') != '0':
         raise RuntimeError('target role already exists; refusing to reuse an unknown role')
+    unexpected = sql(source, "SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('public','private','information_schema') AND nspname NOT LIKE 'pg_%'")
+    if unexpected != '0':
+        raise RuntimeError('source has additional schemas; inventory them before using the single-tenant copy tool')
     before = manifest(source, {'data': 'public', 'private': 'private'})
     original = args.work_dir / 'source.dump'
     run(source, 'pg_dump', '--format=custom', '--no-owner', '--no-acl', '--file', str(original))

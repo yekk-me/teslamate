@@ -38,10 +38,7 @@ jobs:
       - run: mix deps.get
       - name: Check changed Elixir formatting
         run: |
-          git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format
-          echo FLEET_FORMAT_PATCH
-          git diff -- "*.ex" "*.exs" | gzip | base64 -w0
-          echo
+          git diff --name-only 49afed642cbf773f5fa8dabf5d45bb61e403ac6a HEAD -- "*.ex" "*.exs" | xargs -r mix format --check-formatted
       - run: mix compile
       - name: Fleet database and OAuth regression
         run: mix test test/tesla_api test/teslamate/fleet
@@ -71,6 +68,16 @@ jobs:
           SQL
           python3 tools/shared/migrate.py --tenant-id copy-check --runtime-role postgres --source-stopped --work-dir /tmp/shared-copy-check
           python3 -c 'import json; assert json.load(open("/tmp/shared-copy-check/verification.json"))["verified"]'
+      - name: Copy a complete TeslaMate schema including extensions and functions
+        env:
+          SOURCE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/migration_full_source?sslmode=disable
+          SHARED_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/teslamate_test?sslmode=disable
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          DATABASE_NAME=migration_full_source mix ecto.create
+          DATABASE_NAME=migration_full_source mix ecto.migrate
+          python3 tools/shared/migrate.py --tenant-id full-copy-check --runtime-role postgres --source-stopped --work-dir /tmp/shared-full-copy-check
+          python3 -c 'import json; assert json.load(open("/tmp/shared-full-copy-check/verification.json"))["verified"]'
       - run: python3 -m unittest discover -s tools/fleet/tests -v
         if: always()
       - uses: actions/cache/save@v4
