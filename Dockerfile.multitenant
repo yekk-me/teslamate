@@ -5,8 +5,9 @@ FROM --platform=$BUILDPLATFORM ${TESLAMATE_BUILDER_IMAGE} AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ENV HEX_MIRROR="https://hexpm.upyun.com" \
-    HEX_CDN="https://hexpm.upyun.com"
+ARG TESLAMATE_HEX_MIRROR=https://hexpm.upyun.com
+ENV HEX_MIRROR=${TESLAMATE_HEX_MIRROR} \
+    HEX_CDN=${TESLAMATE_HEX_MIRROR}
 
 RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*
 

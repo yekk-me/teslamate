@@ -63,7 +63,12 @@ defmodule TeslaMate.Api do
 
     with :ok <- allow_tesla_api(tenant_id),
          {:ok, %Auth{} = auth} <- fetch_auth(name) do
-      TeslaApi.Stream.start_link(auth: auth, vehicle_id: vid, receiver: receiver)
+      TeslaApi.Stream.start_link(
+        auth: auth,
+        vehicle_id: vid,
+        receiver: receiver,
+        tenant_id: tenant_id
+      )
     end
   end
 

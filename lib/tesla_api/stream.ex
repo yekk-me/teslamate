@@ -8,6 +8,9 @@ defmodule TeslaApi.Stream do
   defmodule State do
     defstruct auth: nil,
               vehicle_id: nil,
+              tenant_id: nil,
+              client_errors: 0,
+              retry_at: nil,
               timer: nil,
               receiver: &IO.inspect/1,
               last_data: nil,
@@ -27,6 +30,7 @@ defmodule TeslaApi.Stream do
     state = %State{
       receiver: Keyword.get(args, :receiver, &Logger.debug(inspect(&1))),
       vehicle_id: Keyword.fetch!(args, :vehicle_id),
+      tenant_id: Keyword.get(args, :tenant_id),
       auth: Keyword.fetch!(args, :auth)
     }
 
@@ -66,11 +70,25 @@ defmodule TeslaApi.Stream do
   @impl true
   def handle_connect(_conn, state) do
     Logger.debug("Connection established")
-    send(self(), :subscribe)
-    {:ok, state}
+    cancel_timer(state.timer)
+    delay = max((state.retry_at || now_ms()) - now_ms(), 0)
+    timer = Process.send_after(self(), :subscribe, delay)
+    {:ok, %State{state | timer: timer}}
   end
 
   @impl true
+  def handle_info(:subscribe, %State{retry_at: deadline} = state) when is_integer(deadline) do
+    remaining = deadline - now_ms()
+
+    if remaining > 0 do
+      cancel_timer(state.timer)
+      timer = Process.send_after(self(), :subscribe, remaining)
+      {:ok, %State{state | timer: timer}}
+    else
+      handle_info(:subscribe, %State{state | retry_at: nil})
+    end
+  end
+
   def handle_info(:subscribe, %State{auth: %Auth{token: token}, vehicle_id: vid} = state) do
     Logger.debug("Subscribing …")
 
@@ -85,7 +103,7 @@ defmodule TeslaApi.Stream do
       tag: "#{vid}"
     }
 
-    {:reply, frame!(connect_message), %State{state | timer: timer}}
+    {:reply, frame!(connect_message), %State{state | timer: timer, retry_at: nil}}
   end
 
   def handle_info(:timeout, %State{timeouts: t, receiver: receiver} = state) do
@@ -111,9 +129,14 @@ defmodule TeslaApi.Stream do
   def handle_frame({_type, msg}, %State{vehicle_id: vid} = state) do
     tag = to_string(vid)
 
-    cancel_timer(state.timer)
-    timer = Process.send_after(self(), :timeout, :timer.seconds(30))
-    state = %State{state | timer: timer}
+    state =
+      if state.retry_at do
+        state
+      else
+        cancel_timer(state.timer)
+        timer = Process.send_after(self(), :timeout, :timer.seconds(30))
+        %State{state | timer: timer}
+      end
 
     case Jason.decode(msg) do
       {:ok, %{"msg_type" => "control:hello", "connection_timeout" => t}} ->
@@ -129,7 +152,15 @@ defmodule TeslaApi.Stream do
 
         state.receiver.(data)
 
-        {:ok, %State{state | last_data: data, timeouts: 0, disconnects: 0}}
+        {:ok,
+         %State{
+           state
+           | last_data: data,
+             timeouts: 0,
+             disconnects: 0,
+             client_errors: 0,
+             retry_at: nil
+         }}
 
       {:ok, %{"msg_type" => "data:error", "tag" => ^tag, "error_type" => "vehicle_disconnected"}} ->
         case state.disconnects do
@@ -173,8 +204,25 @@ defmodule TeslaApi.Stream do
       {:ok, %{"msg_type" => "data:error", "tag" => ^tag, "error_type" => "client_error"} = msg} ->
         case msg do
           %{"value" => "owner_api error:" <> _ = error} ->
-            Logger.warning("Streaming API Client Error: #{error}")
-            {:close, state}
+            failures = min(state.client_errors + 1, 5)
+            delay = min(30_000 * Integer.pow(2, failures - 1), 300_000)
+
+            status =
+              case Regex.run(~r/HTTP status: (\d{3})\b/, error) do
+                [_, code] -> code
+                _ -> "unknown"
+              end
+
+            Logger.warning(
+              "Streaming API owner error: status=#{status} retry_in_ms=#{delay}",
+              tenant_id: state.tenant_id,
+              vehicle_id: if(is_integer(vid), do: vid, else: nil)
+            )
+
+            cancel_timer(state.timer)
+
+            {:close,
+             %State{state | timer: nil, client_errors: failures, retry_at: now_ms() + delay}}
 
           %{"value" => "Can't validate token" <> _} ->
             Logger.warning("Streaming API: Tokens expired")
@@ -255,6 +303,8 @@ defmodule TeslaApi.Stream do
   end
 
   ## Private
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp frame!(data) when is_map(data), do: {:text, Jason.encode!(data)}
 

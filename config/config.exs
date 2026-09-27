@@ -18,7 +18,7 @@ config :teslamate,
 
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:car_id]
+  metadata: [:car_id, :tenant_id, :vehicle_id]
 
 config :phoenix, :json_library, Jason
 

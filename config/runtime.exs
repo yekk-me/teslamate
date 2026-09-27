@@ -1,5 +1,7 @@
 import Config
 
+config :logger, :console, metadata: [:car_id, :tenant_id, :vehicle_id]
+
 defmodule Util do
   def random_string(length) do
     :crypto.strong_rand_bytes(length) |> Base.encode64() |> binary_part(0, length)
