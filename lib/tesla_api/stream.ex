@@ -11,6 +11,7 @@ defmodule TeslaApi.Stream do
               tenant_id: nil,
               client_errors: 0,
               retry_at: nil,
+              subscribe_timer: nil,
               timer: nil,
               receiver: &IO.inspect/1,
               last_data: nil,
@@ -67,25 +68,38 @@ defmodule TeslaApi.Stream do
     {:reply, frame!(%{msg_type: "data:unsubscribe", tag: "#{vid}"}), state}
   end
 
+  # The server greets every connection with control:hello, and each frame
+  # re-arms `timer` as the receive timeout. A pending subscription must
+  # therefore never live in `timer`: the greeting would cancel it and the
+  # stream would stay connected without ever subscribing. Without a cooldown
+  # subscribe right away (as before); during one, keep the delayed
+  # subscription in its own timer.
   @impl true
   def handle_connect(_conn, state) do
     Logger.debug("Connection established")
-    cancel_timer(state.timer)
-    delay = max((state.retry_at || now_ms()) - now_ms(), 0)
-    timer = Process.send_after(self(), :subscribe, delay)
-    {:ok, %State{state | timer: timer}}
+    cancel_timer(state.subscribe_timer)
+
+    case cooldown_ms(state) do
+      0 ->
+        send(self(), :subscribe)
+        {:ok, %State{state | subscribe_timer: nil}}
+
+      delay ->
+        timer = Process.send_after(self(), :subscribe, delay)
+        {:ok, %State{state | subscribe_timer: timer}}
+    end
   end
 
   @impl true
   def handle_info(:subscribe, %State{retry_at: deadline} = state) when is_integer(deadline) do
-    remaining = deadline - now_ms()
+    case cooldown_ms(state) do
+      0 ->
+        handle_info(:subscribe, %State{state | retry_at: nil})
 
-    if remaining > 0 do
-      cancel_timer(state.timer)
-      timer = Process.send_after(self(), :subscribe, remaining)
-      {:ok, %State{state | timer: timer}}
-    else
-      handle_info(:subscribe, %State{state | retry_at: nil})
+      remaining ->
+        cancel_timer(state.subscribe_timer)
+        timer = Process.send_after(self(), :subscribe, remaining)
+        {:ok, %State{state | subscribe_timer: timer}}
     end
   end
 
@@ -103,7 +117,8 @@ defmodule TeslaApi.Stream do
       tag: "#{vid}"
     }
 
-    {:reply, frame!(connect_message), %State{state | timer: timer, retry_at: nil}}
+    {:reply, frame!(connect_message),
+     %State{state | timer: timer, subscribe_timer: nil, retry_at: nil}}
   end
 
   def handle_info(:timeout, %State{timeouts: t, receiver: receiver} = state) do
@@ -220,9 +235,16 @@ defmodule TeslaApi.Stream do
             )
 
             cancel_timer(state.timer)
+            cancel_timer(state.subscribe_timer)
 
             {:close,
-             %State{state | timer: nil, client_errors: failures, retry_at: now_ms() + delay}}
+             %State{
+               state
+               | timer: nil,
+                 subscribe_timer: nil,
+                 client_errors: failures,
+                 retry_at: now_ms() + delay
+             }}
 
           %{"value" => "Can't validate token" <> _} ->
             Logger.warning("Streaming API: Tokens expired")
@@ -250,6 +272,8 @@ defmodule TeslaApi.Stream do
   @impl true
   def handle_disconnect(%{reason: reason, attempt_number: n}, state) when is_number(n) do
     cancel_timer(state.timer)
+    cancel_timer(state.subscribe_timer)
+    state = %State{state | timer: nil, subscribe_timer: nil}
 
     case reason do
       {:local, :normal} ->
@@ -305,6 +329,9 @@ defmodule TeslaApi.Stream do
   ## Private
 
   defp now_ms, do: System.monotonic_time(:millisecond)
+
+  defp cooldown_ms(%State{retry_at: nil}), do: 0
+  defp cooldown_ms(%State{retry_at: deadline}), do: max(deadline - now_ms(), 0)
 
   defp frame!(data) when is_map(data), do: {:text, Jason.encode!(data)}
 
