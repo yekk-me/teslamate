@@ -67,37 +67,49 @@ defmodule TeslaMate.Mqtt.PubSub.VehicleSubscriber do
       |> add_geofence(summary)
       |> add_active_route(summary)
 
-    publish_values(values, state)
-    {:noreply, %State{state | last_values: values}}
+    published = publish_values(values, state)
+    {:noreply, %State{state | last_values: published}}
   end
 
+  # Returns the values to remember as published. Only changed values are sent,
+  # so a dropped publish (rate limit, timeout) must not be remembered as sent:
+  # otherwise e.g. the speed or gear at the end of a trip stays retained at its
+  # last driving value until it happens to change again.
   defp publish_values(values, %State{last_values: values} = state) do
     values
     |> Map.take(@do_not_retain)
     |> Enum.each(fn {key, value} ->
       publish({key, value}, state)
     end)
+
+    values
   end
 
   defp publish_values(values, state) do
-    values
-    |> Stream.reject(&match?({_key, :unknown}, &1))
-    |> Stream.filter(fn {key, value} ->
-      ((key in @publish_if_nil or value != nil) and
-         (state.last_values == nil or Map.get(state.last_values, key) != value)) or
-        key in @do_not_retain
-    end)
+    pending =
+      values
+      |> Enum.reject(&match?({_key, :unknown}, &1))
+      |> Enum.filter(fn {key, value} ->
+        ((key in @publish_if_nil or value != nil) and
+           (state.last_values == nil or Map.get(state.last_values, key) != value)) or
+          key in @do_not_retain
+      end)
+
+    pending
     |> Task.async_stream(&publish(&1, state),
       max_concurrency: 10,
       on_timeout: :kill_task,
-      ordered: false
+      ordered: true
     )
-    |> Enum.each(fn
-      {_, reason} when reason != :ok ->
-        Logger.warning("MQTT publishing failed: #{inspect(reason)}")
+    |> Enum.zip(pending)
+    |> Enum.reduce(values, fn
+      {{:ok, :ok}, _published}, acc ->
+        acc
 
-      _ok ->
-        nil
+      {result, {key, _value}}, acc ->
+        reason = with {:ok, reason} <- result, do: reason
+        Logger.warning("MQTT publishing failed: #{inspect(reason)}")
+        Map.put(acc, key, :unpublished)
     end)
   end
 

@@ -237,6 +237,31 @@ defmodule TeslaMate.Mqtt.PubSub.VehicleSubscriberTest do
     assert_receive {MqttPublisherMock, {:publish, "teslamate/cars/0/version", "3", _}}
   end
 
+  @tag :capture_log
+  test "retries a value whose publish was dropped instead of remembering it", %{test: name} do
+    {:ok, pid} = start_subscriber(name, 0)
+    publisher = :"mqtt_publisher_#{name}"
+
+    assert_receive {VehiclesMock, {:subscribe_to_summary, 0}}
+
+    # Parked: the speed update is rate limited while the battery update goes out.
+    :ok = MqttPublisherMock.fail_topics(publisher, ["teslamate/cars/0/speed"])
+    send(pid, %Summary{speed: 0, battery_level: 80})
+    assert_receive {MqttPublisherMock, {:publish, "teslamate/cars/0/speed", "0", _}}
+    assert_receive {MqttPublisherMock, {:publish, "teslamate/cars/0/battery_level", "80", _}}
+
+    # The same summary again: the dropped speed is published, the delivered
+    # battery level is not repeated.
+    :ok = MqttPublisherMock.fail_topics(publisher, [])
+    send(pid, %Summary{speed: 0, battery_level: 80})
+    assert_receive {MqttPublisherMock, {:publish, "teslamate/cars/0/speed", "0", _}}
+    refute_receive {MqttPublisherMock, {:publish, "teslamate/cars/0/battery_level", _, _}}
+
+    # Once delivered, an unchanged speed is not published again.
+    send(pid, %Summary{speed: 0, battery_level: 80})
+    refute_receive {MqttPublisherMock, {:publish, "teslamate/cars/0/speed", _, _}}
+  end
+
   test "allows namespaces", %{test: name} do
     {:ok, pid} = start_subscriber(name, 0, "account_0")
 

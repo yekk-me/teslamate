@@ -1,7 +1,7 @@
 defmodule MqttPublisherMock do
   use GenServer
 
-  defstruct [:pid]
+  defstruct [:pid, failing: MapSet.new()]
   alias __MODULE__, as: State
 
   # API
@@ -12,6 +12,9 @@ defmodule MqttPublisherMock do
 
   def publish(name, topic, msg, opts), do: GenServer.call(name, {:publish, topic, msg, opts})
 
+  # Make publishes to these topics fail as if the tenant was rate limited.
+  def fail_topics(name, topics), do: GenServer.call(name, {:fail_topics, MapSet.new(topics)})
+
   # Callbacks
 
   @impl true
@@ -20,8 +23,13 @@ defmodule MqttPublisherMock do
   end
 
   @impl true
-  def handle_call({:publish, _topic, _msg, _opts} = action, _from, %State{pid: pid} = state) do
+  def handle_call({:publish, topic, _msg, _opts} = action, _from, %State{pid: pid} = state) do
     send(pid, {MqttPublisherMock, action})
-    {:reply, :ok, state}
+    reply = if MapSet.member?(state.failing, topic), do: {:error, :rate_limited}, else: :ok
+    {:reply, reply, state}
+  end
+
+  def handle_call({:fail_topics, topics}, _from, %State{} = state) do
+    {:reply, :ok, %State{state | failing: topics}}
   end
 end

@@ -32,9 +32,9 @@ defmodule TeslaApi.StreamTest do
         Stream.handle_disconnect(%{reason: {:local, :normal}, attempt_number: 1}, failed)
 
       {:ok, waiting} = Stream.handle_connect(nil, failed)
-      assert Process.read_timer(waiting.timer) in (delay - 1000)..delay
+      assert Process.read_timer(waiting.subscribe_timer) in (delay - 1000)..delay
       refute_receive :subscribe, 10
-      Process.cancel_timer(waiting.timer)
+      Process.cancel_timer(waiting.subscribe_timer)
       waiting
     end)
   end
@@ -45,9 +45,9 @@ defmodule TeslaApi.StreamTest do
     {:ok, waiting} = Stream.handle_connect(nil, waiting)
     hello = Jason.encode!(%{msg_type: "control:hello", connection_timeout: 30})
     {:ok, next} = Stream.handle_frame({:text, hello}, waiting)
-    assert next.timer == waiting.timer
-    assert Process.read_timer(next.timer) > 290_000
-    Process.cancel_timer(next.timer)
+    assert next.subscribe_timer == waiting.subscribe_timer
+    assert Process.read_timer(next.subscribe_timer) > 290_000
+    Process.cancel_timer(next.subscribe_timer)
   end
 
   @tag :capture_log
@@ -95,7 +95,15 @@ defmodule TeslaApi.StreamTest do
     {:ok, waiting} = Stream.handle_connect(nil, owner_error(state()))
     assert {:reply, {:text, _}, _} = Stream.handle_cast(:disconnect, waiting)
     assert_receive :exit
-    Process.cancel_timer(waiting.timer)
+    Process.cancel_timer(waiting.subscribe_timer)
+  end
+
+  test "the greeting right after connect does not cancel the subscription" do
+    {:ok, connected} = Stream.handle_connect(nil, state())
+    hello = Jason.encode!(%{msg_type: "control:hello", connection_timeout: 30_000})
+    {:ok, greeted} = Stream.handle_frame({:text, hello}, connected)
+    assert_receive :subscribe
+    Process.cancel_timer(greeted.timer)
   end
 
   test "normal connect subscribes immediately" do
@@ -108,7 +116,7 @@ defmodule TeslaApi.StreamTest do
   test "stale subscribe messages cannot bypass cooldown" do
     failed = owner_error(state())
     assert {:ok, waiting} = Stream.handle_info(:subscribe, failed)
-    assert Process.read_timer(waiting.timer) > 29_000
-    Process.cancel_timer(waiting.timer)
+    assert Process.read_timer(waiting.subscribe_timer) > 29_000
+    Process.cancel_timer(waiting.subscribe_timer)
   end
 end

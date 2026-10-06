@@ -16,6 +16,26 @@ VINs are not included in this warning. Runtime logger metadata is configured as
 well as compile-time metadata because the multitenant image overlays the existing
 release.
 
+## 2026-10-06 regression and fix
+
+The first release of this change was rolled back on node2 after every car
+stopped receiving stream data (positions fell from roughly 80-200 to 4 per
+minute; only the 15-second vehicle_data polling remained). No error was logged.
+
+Cause: `handle_connect` scheduled the subscription with a zero-delay timer and
+stored it in `state.timer`. The server greets every connection with
+`control:hello`, and `handle_frame` re-arms `state.timer` as the receive
+timeout, cancelling whatever it held. When the greeting was handled before the
+zero-delay timer fired, the subscription was cancelled; the connection then
+timed out and reconnected into the same race.
+
+Fix: without a cooldown the client subscribes immediately, as before the
+backoff change. A cooldown subscription lives in its own `subscribe_timer`,
+which frame handling never touches; disconnects and owner errors cancel both
+timers. `test/tesla_api/stream_integration_test.exs` runs the real WebSocket
+client against a local server over ws and wss (ten fresh connections each);
+both fail against the first release and pass now.
+
 ## Verification
 
 - The immediate-resubscription regression fails against the original stream
